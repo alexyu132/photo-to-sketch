@@ -1,0 +1,2095 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<link rel="icon" href="data:," />
+<title>Photo to Sketch — Plotter Converter</title>
+<style>
+  /* Bauhaus / Braun / Dieter Rams — as in the photo app:
+     Helvetica, flat white on warm grey, 2px black rules, hairlines,
+     square corners, one orange-red accent, mono uppercase labels. */
+  :root{
+    color-scheme: light;
+    --bg:#f6f6f3; --surface:#ffffff; --soft:#e9e9e4;
+    --text:#0b0b0b; --inverse:#ffffff; --dim:#62625d;
+    --border:#0b0b0b; --hairline:#c8c8c2;
+    --accent:#e63b20; --accent-strong:#bd2b14;
+    --track:#c8c8c2;
+    /* legacy aliases used inline in the sheet/preview */
+    --paper:var(--surface); --paper2:var(--soft);
+    --ink:var(--text); --ink2:var(--dim); --ink3:var(--dim);
+    --line:var(--hairline); --line2:var(--border);
+    --red:var(--accent); --blue:var(--text); --teal:var(--accent);
+    --chip:var(--soft); --radius:0px;
+    font-family:"Helvetica Neue",Helvetica,ui-sans-serif,system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      color-scheme: dark;
+      --bg:#0a0a0a; --surface:#111111; --soft:#20201e;
+      --text:#f5f5f0; --inverse:#0a0a0a; --dim:#aaa9a2;
+      --border:#f5f5f0; --hairline:#3b3b38;
+      --accent:#ff4c2f; --accent-strong:#ff745d;
+      --track:#3b3b38;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:"Helvetica Neue",Helvetica,ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  button,select,input{font:inherit;min-height:44px}
+  button{cursor:pointer;color:inherit}
+  button:focus-visible,input:focus-visible,select:focus-visible,.drop:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+  button:disabled{opacity:.38;cursor:not-allowed}
+  a{color:var(--text);text-decoration-color:var(--accent);text-underline-offset:3px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .wrap{max-width:1240px;margin:0 auto;padding:24px 18px 48px}
+  /* header — photo app page-header */
+  .top{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;justify-content:space-between;border-bottom:2px solid var(--border);padding:18px 0 20px}
+  .top h1{margin:0;font-size:clamp(36px,5vw,48px);line-height:.96;letter-spacing:-.06em;font-weight:800}
+  .top h1 span{color:var(--accent)}
+  .bed-badge{border:1px solid var(--border);padding:12px 14px;background:var(--surface);min-width:180px;border-radius:0}
+  .bed-badge b{display:block;font:700 11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase}
+  .bed-badge span{font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+  /* layout */
+  .layout{display:grid;grid-template-columns:340px minmax(0,1fr);gap:20px;margin-top:20px;align-items:start;min-width:0}
+  .layout>*{min-width:0}
+  @media(max-width:900px){.layout{grid-template-columns:minmax(0,1fr)}}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:0;box-shadow:none;min-width:0}
+  .controls{padding:20px;position:sticky;top:14px;min-width:0;overflow:hidden}
+  @media(max-width:900px){.controls{position:static}}
+  .controls h2,.preview-head h2{margin:0;font:700 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase}
+  .grouphead{margin:22px 0 0;font:700 10px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);border-top:2px solid var(--border);padding-top:12px}
+  .field{margin-top:18px}
+  .field:first-of-type{margin-top:14px}
+  .field label,.field .lab{display:flex;justify-content:space-between;align-items:baseline;font-weight:700;font-size:13px;margin-bottom:8px;letter-spacing:-.01em}
+  .field label output,.field .lab output{font:500 11px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim)}
+  .hint{font-size:12px;color:var(--dim);line-height:1.45;margin:6px 0 0}
+  input[type=range]{width:100%;accent-color:var(--accent);min-height:28px;padding:0}
+  select{width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:0;padding:9px 10px;font-weight:700}
+  .seg{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--border)}
+  .seg button{border:0;border-right:1px solid var(--hairline);border-bottom:1px solid var(--hairline);background:var(--surface);color:var(--text);border-radius:0;padding:10px 6px;font-weight:800;font-size:11px;letter-spacing:.035em;text-transform:uppercase}
+  .seg button.wide{grid-column:1/-1;border-right:0}
+  .seg button[aria-pressed="true"]{background:var(--text);color:var(--bg)}
+  .seg button:hover:not([aria-pressed="true"]){background:var(--soft)}
+  .seg3{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--border)}
+  .seg3 button{border:0;border-right:1px solid var(--hairline);background:var(--surface);color:var(--text);border-radius:0;padding:9px 2px;font-weight:800;font-size:10px;letter-spacing:.03em;text-transform:uppercase}
+  .seg3 button:last-child{border-right:0}
+  .seg3 button[aria-pressed="true"]{background:var(--accent);color:#fff}
+  .seg3 button:hover:not([aria-pressed="true"]){background:var(--soft)}
+  .check{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--hairline);border-radius:0;background:var(--surface);cursor:pointer}
+  .check input{width:18px;height:18px;min-height:18px;margin:1px 0 0;accent-color:var(--accent);flex:none}
+  .check b{font-size:13px;display:block;letter-spacing:-.01em}
+  .check span{font-size:12px;color:var(--dim);line-height:1.4;display:block;margin-top:2px}
+  .pens{margin-top:20px;border-top:2px solid var(--border);padding-top:14px}
+  .pens h3{margin:0 0 10px;font:700 10px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
+  .penrow{display:flex;gap:4px}
+  .pen{flex:1;text-align:center}
+  .pen i{display:block;height:28px;border-radius:0;border:1px solid var(--border)}
+  .pen span{display:block;font:10px ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:5px;color:var(--dim)}
+  .actions{display:grid;gap:8px;margin-top:20px}
+  .btn{border-radius:0;border:1px solid var(--border);padding:0 16px;min-height:44px;font-weight:800;font-size:12px;letter-spacing:.035em;text-transform:uppercase;background:transparent;color:var(--text);display:inline-flex;align-items:center;justify-content:center}
+  .btn:hover:not(:disabled){background:var(--text);color:var(--bg)}
+  .btn.primary{background:var(--text);color:var(--bg)}
+  .btn.primary:hover:not(:disabled){background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.download{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.download:hover:not(:disabled){background:var(--accent-strong);border-color:var(--accent-strong);color:#fff}
+  /* dropzone */
+  .photo-stack{display:grid;gap:10px;min-width:0;max-width:100%}
+  .photo-stack>*{min-width:0;max-width:100%}
+  .drop{border:1px solid var(--border);border-radius:0;background:var(--soft);padding:20px 16px;text-align:left;cursor:pointer;min-width:0;max-width:100%;overflow:hidden}
+  .drop.drag{outline:3px solid var(--accent);outline-offset:2px}
+  .drop strong{display:block;font-size:19px;letter-spacing:-.03em;line-height:1;overflow-wrap:anywhere}
+  .drop p{margin:8px 0 0;color:var(--dim);font:11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.05em;text-transform:uppercase}
+  .drop .browse{display:inline-flex;align-items:center;margin-top:14px;background:var(--text);color:var(--bg);padding:0 16px;min-height:44px;border-radius:0;font-weight:800;font-size:12px;letter-spacing:.035em;text-transform:uppercase}
+  .drop:hover .browse{background:var(--accent);color:#fff}
+  .thumbrow{display:none;gap:10px;align-items:center;border:1px solid var(--hairline);border-radius:0;padding:8px;background:var(--soft);min-width:0;max-width:100%;overflow:hidden}
+  .thumbrow.show{display:flex}
+  .thumbrow img{width:52px;height:52px;object-fit:cover;border-radius:0;border:1px solid var(--border);flex:none}
+  .thumbrow .meta{min-width:0;flex:1 1 auto;overflow:hidden}
+  .thumbrow .meta b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .thumbrow .meta span{display:block;font-size:11px;color:var(--dim);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .thumbrow button{flex:0 0 auto;border:1px solid var(--border);background:var(--surface);border-radius:0;padding:0 12px;font-weight:800;font-size:11px;letter-spacing:.035em;text-transform:uppercase;min-height:38px;white-space:nowrap}
+  /* preview */
+  .preview{overflow:hidden;min-width:0;max-width:100%}
+  .preview-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--hairline)}
+  .viewseg{display:flex;gap:0;border:1px solid var(--border)}
+  .viewseg button{border:0;border-right:1px solid var(--hairline);background:var(--surface);color:var(--text);border-radius:0;padding:0 14px;font-weight:800;font-size:11px;letter-spacing:.035em;text-transform:uppercase;min-height:38px}
+  .viewseg button:last-child{border-right:0}
+  .viewseg button[aria-pressed="true"]{background:var(--text);color:var(--bg)}
+  .stage{background:var(--soft);padding:20px;display:flex;align-items:center;justify-content:center;min-height:420px}
+  .sheet{background:#ffffff;color:#0b0b0b;border:1px solid #0b0b0b;box-shadow:none;border-radius:0;width:100%;max-width:640px;aspect-ratio:118/140;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+  .sheet svg,.sheet img.sketchimg{width:100%;height:100%;display:block}
+  .sheet img.orig{width:100%;height:100%;object-fit:contain;display:block;background:#111}
+  .empty{padding:28px;text-align:left;color:#62625d;max-width:340px;align-self:flex-end;margin-right:auto}
+  .empty .big{font-size:28px;line-height:1;color:var(--accent)}
+  .empty strong{display:block;color:#0b0b0b;font-size:25px;line-height:1;letter-spacing:-.04em;margin-top:16px}
+  .empty p{font-size:13px;line-height:1.5;margin:10px 0 0}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:2px solid var(--border)}
+  @media(max-width:560px){.stats{grid-template-columns:1fr 1fr}}
+  .stat{padding:12px 14px;border-right:1px solid var(--hairline)}
+  .stat:last-child{border-right:0}
+  .stat b{display:block;font:400 22px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.02em}
+  .stat span{font:700 10px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
+  .statusbar{padding:11px 16px;border-top:1px solid var(--hairline);font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .prog{height:4px;background:var(--track);display:none}
+  .prog i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+  .prog.show{display:block}
+  .methods{margin-top:26px;border-top:2px solid var(--border);padding-top:14px;font-size:12.5px;color:var(--dim);line-height:1.55;max-width:78ch}
+  .methods strong{color:var(--text)}
+  .methods p{margin:0}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Photo to <span>Sketch</span></h1>
+    </div>
+    <div class="bed-badge" aria-label="Plotter bed">
+      <b>Plotter bed</b>
+      <span class="mono">118 × 140 mm · stroke only<br>8 tools · T0–T7 · 0.42 mm line</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- CONTROLS -->
+    <section class="panel controls" aria-label="Converter controls">
+      <h2>1 · Photo</h2>
+      <div class="photo-stack" style="margin-top:12px">
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Upload a photo">
+          <strong>Drop a photo here</strong>
+          <p>JPG, PNG or WebP</p>
+          <span class="browse">Choose photo</span>
+          <input class="sr" type="file" id="file" accept="image/jpeg,image/png,image/webp,image/gif" />
+        </div>
+        <div class="thumbrow" id="thumbrow">
+          <img id="thumb" alt="Your uploaded photo, thumbnail" />
+          <div class="meta"><b id="fname">photo.jpg</b><span id="fmeta">—</span></div>
+          <button type="button" id="replaceBtn">Replace</button>
+        </div>
+      </div>
+
+      <h2 style="margin-top:22px">2 · Drawing</h2>
+
+      <div class="field">
+        <div class="lab"><span>Shading engine</span><output id="shadingOut">Flow field</output></div>
+        <div class="seg" id="shadingSeg" role="group" aria-label="Shading engine">
+          <button type="button" data-v="flowfield" aria-pressed="true" class="wide">≋ Flow field — evenly spaced</button>
+          <button type="button" data-v="flow" aria-pressed="false">〜 Flow squiggle</button>
+          <button type="button" data-v="gradient" aria-pressed="false">✕ Gradient hatch</button>
+          <button type="button" data-v="wave" aria-pressed="false">∿ Wave squiggle</button>
+          <button type="button" data-v="off" aria-pressed="false">○ Contours only</button>
+          <button type="button" data-v="tsp" aria-pressed="false">⌇ TSP scribble</button>
+          <button type="button" data-v="colour" aria-pressed="false">▦ Colour TSP</button>
+          <button type="button" data-v="stipple" aria-pressed="false">⁚ Stipple dots</button>
+          <button type="button" data-v="spiral" aria-pressed="false">◎ Spiral halftone</button>
+          <button type="button" data-v="dither" aria-pressed="false">▩ Dither dots</button>
+        </div>
+        <p class="hint" id="shadingHint">Smoothest lines. Fast plot.</p>
+      </div>
+
+      <h3 class="grouphead">This engine&rsquo;s controls</h3>
+
+      <div class="enginePanel" id="panel-flowfield">
+        <div class="field">
+          <label for="flowSpacing">Flow spacing <output id="flowSpacingOut">1.00× · 0.5–2.9 mm</output></label>
+          <input type="range" id="flowSpacing" min="0.5" max="2" step="0.05" value="1" aria-label="Flow line spacing, 0.5 to 2 times" />
+          <p class="hint">Lower = darker. Higher = lighter, faster. Stacks with Density.</p>
+        </div>
+        <div class="field">
+          <label for="smooth">Smoothing <output id="smoothOut">2.5 mm</output></label>
+          <input type="range" id="smooth" min="0.5" max="6" step="0.1" value="2.5" aria-label="Direction field smoothing, 0.5 to 6 millimetres" />
+          <p class="hint">Higher = calmer lines. Lower = more detail, more wiggle.</p>
+        </div>
+        <div class="field">
+          <label class="check">
+            <input type="checkbox" id="adaptiveSmooth" checked />
+            <span><b>Adaptive smoothing</b><span>Calmer lines in flat areas, detail kept at edges.</span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="enginePanel" id="panel-flow" style="display:none">
+        <div class="field">
+          <label for="strokeLen">Stroke length <output id="strokeLenOut">1.00×</output></label>
+          <input type="range" id="strokeLen" min="0.5" max="2" step="0.05" value="1" aria-label="Flow stroke length, 0.5 to 2 times" />
+          <p class="hint">Longer = fewer lifts, looser texture.</p>
+        </div>
+      </div>
+
+      <div class="enginePanel" id="panel-gradient" style="display:none">
+        <div class="field">
+          <label for="hatchAngle">Hatch angle <output id="hatchAngleOut">0°</output></label>
+          <input type="range" id="hatchAngle" min="0" max="90" step="0.5" value="0" aria-label="Hatch angle offset, 0 to 90 degrees" />
+          <p class="hint">Match to a dominant slope in the photo.</p>
+        </div>
+      </div>
+
+      <div class="enginePanel" id="panel-wave" style="display:none">
+        <div class="field">
+          <div class="lab"><span>Direction</span><output id="waveOrientOut">Horizontal</output></div>
+          <div class="seg" id="waveOrientSeg" role="group" aria-label="Wave direction">
+            <button type="button" data-v="h" aria-pressed="true">Horizontal rows</button>
+            <button type="button" data-v="v" aria-pressed="false">Vertical rows</button>
+          </div>
+        </div>
+        <div class="field">
+          <div class="lab"><span>Darkness drives</span><output id="waveDriveOut">Amp + freq</output></div>
+          <div class="seg3" id="waveDriveSeg" role="group" aria-label="What darkness drives">
+            <button type="button" data-v="amp" aria-pressed="false">Amplitude</button>
+            <button type="button" data-v="freq" aria-pressed="false">Frequency</button>
+            <button type="button" data-v="both" aria-pressed="true">Both</button>
+          </div>
+          <p class="hint">Each row is split into per-pen segments, so the waves keep the photo&rsquo;s colours.</p>
+        </div>
+        <div class="field">
+          <label for="waveCount">Scan lines <output id="waveCountOut">50</output></label>
+          <input type="range" id="waveCount" min="14" max="120" step="1" value="50" aria-label="Number of wave scan lines, 14 to 120" />
+          <p class="hint">Fewer lines = faster plot. Sets row spacing.</p>
+        </div>
+        <div class="field">
+          <label for="waveSpacing">Row spacing <output id="waveSpacingOut">2.2 mm</output></label>
+          <input type="range" id="waveSpacing" min="0.8" max="9" step="0.1" value="2.2" aria-label="Wave row spacing, 0.8 to 9 millimetres" />
+          <p class="hint">Lower = darker, slower. Stacks with Density.</p>
+        </div>
+        <div class="field">
+          <label for="waveAmp">Max amplitude <output id="waveAmpOut">1.2 mm</output></label>
+          <input type="range" id="waveAmp" min="0.2" max="2.5" step="0.1" value="1.2" aria-label="Maximum wave amplitude, 0.2 to 2.5 millimetres" />
+          <p class="hint">How far the waves swing in the darkest areas.</p>
+        </div>
+        <div class="field">
+          <label for="waveLen">Wavelength <output id="waveLenOut">6.0 mm</output></label>
+          <input type="range" id="waveLen" min="2" max="12" step="0.5" value="6" aria-label="Wave length, 2 to 12 millimetres" />
+          <p class="hint">Base length in light areas; dark areas tighten it in Frequency / Both.</p>
+        </div>
+      </div>
+
+      <div class="enginePanel" id="panel-off" style="display:none">
+        <p class="hint" style="margin-top:14px">No shading — Density and cap don&rsquo;t apply.</p>
+      </div>
+
+      <div class="enginePanel" id="panel-tsp" style="display:none">
+        <div class="field">
+          <label for="tspPoints">Points <output id="tspPointsOut">6,000</output></label>
+          <input type="range" id="tspPoints" min="300" max="96000" step="250" value="6000" aria-label="TSP point count, 300 to 96000" />
+          <p class="hint">One continuous scribble through every point — a single pen lift. 10,000+ holds facial detail; the top end is a much longer plot.</p>
+        </div>
+        <div class="field">
+          <label for="tspGamma">Darkness emphasis <output id="tspGammaOut">3.0</output></label>
+          <input type="range" id="tspGamma" min="1" max="5" step="0.25" value="3" aria-label="Darkness emphasis, 1 to 5" />
+          <p class="hint">Higher pushes more points into the shadows and thins out the highlights.</p>
+        </div>
+        <div class="field">
+          <label for="tspEdge">Edge boost <output id="tspEdgeOut">1.2</output></label>
+          <input type="range" id="tspEdge" min="0" max="3" step="0.2" value="1.2" aria-label="Edge boost, 0 to 3" />
+          <p class="hint">Steers extra points onto edges and fine texture instead of flat shadow.</p>
+        </div>
+        <div class="field">
+          <label for="tspRelax">Voronoi relax <output id="tspRelaxOut">3</output></label>
+          <input type="range" id="tspRelax" min="0" max="6" step="1" value="3" aria-label="Voronoi relax passes, 0 to 6" />
+          <p class="hint">Lloyd relaxation: each point moves to the darkness-weighted centre of its Voronoi cell, evening out clumps.</p>
+        </div>
+        <div class="field">
+          <label for="tspSmooth">Smoothing <output id="tspSmoothOut">1</output></label>
+          <input type="range" id="tspSmooth" min="0" max="2" step="1" value="1" aria-label="Chaikin smoothing passes, 0 to 2" />
+          <p class="hint">Chaikin passes over the finished tour.</p>
+        </div>
+        <div class="field">
+          <button class="btn" type="button" id="tspReseed" style="width:100%">New variation</button>
+        </div>
+      </div>
+
+      <div class="enginePanel" id="panel-colour" style="display:none">
+        <div class="field">
+          <label for="colPoints">Total points <output id="colPointsOut">5,000</output></label>
+          <input type="range" id="colPoints" min="800" max="80000" step="250" value="5000" aria-label="Colour TSP total points, 800 to 80000" />
+          <p class="hint">Split across the pens by colour weight; each pen gets its own TSP scribble. High counts convert noticeably slower.</p>
+        </div>
+        <div class="field">
+          <label for="colPaper">Paper lightness <output id="colPaperOut">0.92</output></label>
+          <input type="range" id="colPaper" min="0.8" max="0.98" step="0.01" value="0.92" aria-label="Paper lightness, 0.8 to 0.98" />
+          <p class="hint">Pixels lighter than this in OKLab L are never plotted.</p>
+        </div>
+        <div class="field">
+          <label for="colSat">Saturation gate <output id="colSatOut">0.025</output></label>
+          <input type="range" id="colSat" min="0" max="0.08" step="0.005" value="0.025" aria-label="Saturation gate, 0 to 0.08" />
+          <p class="hint">Pixels with less chroma than this can only use the black pen, so greys don&rsquo;t wash blue.</p>
+        </div>
+        <div class="field">
+          <label class="check">
+            <input type="checkbox" id="colSmooth" checked />
+            <span><b>Smooth each pen&rsquo;s tour</b><span>One Chaikin pass per pen.</span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="enginePanel" id="panel-stipple" style="display:none">
+        <div class="field">
+          <label for="stipRelax">Voronoi relax <output id="stipRelaxOut">4</output></label>
+          <input type="range" id="stipRelax" min="0" max="8" step="1" value="4" aria-label="Stipple Voronoi relax passes, 0 to 8" />
+          <p class="hint">Lloyd relaxation &agrave; la StippleGen. 0 = raw random stipple; 3&ndash;6 is the sweet spot.</p>
+        </div>
+        <div class="field">
+          <label for="stipPoints">Dots <output id="stipPointsOut">4,000</output></label>
+          <input type="range" id="stipPoints" min="300" max="96000" step="250" value="4000" aria-label="Stipple dot count, 300 to 96000" />
+          <p class="hint">Every dot is a pen lift, so the top end is an extremely long plot.</p>
+        </div>
+        <div class="field">
+          <label for="stipGamma">Darkness emphasis <output id="stipGammaOut">2.5</output></label>
+          <input type="range" id="stipGamma" min="1" max="5" step="0.25" value="2.5" aria-label="Stipple darkness emphasis, 1 to 5" />
+        </div>
+        <div class="field">
+          <label for="stipR">Dot radius <output id="stipROut">0.8 mm</output></label>
+          <input type="range" id="stipR" min="0.4" max="1.6" step="0.1" value="0.8" aria-label="Stipple dot radius, 0.4 to 1.6 millimetres" />
+        </div>
+        <div class="field">
+          <label class="check">
+            <input type="checkbox" id="stipVary" checked />
+            <span><b>Dot size follows darkness</b><span>Darker areas get bigger dots.</span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="enginePanel" id="panel-spiral" style="display:none">
+        <div class="field">
+          <label for="spirPitch">Ring pitch <output id="spirPitchOut">2.4 mm</output></label>
+          <input type="range" id="spirPitch" min="1.4" max="5" step="0.2" value="2.4" aria-label="Spiral ring pitch, 1.4 to 5 millimetres" />
+          <p class="hint">Base distance between successive turns of the spiral.</p>
+        </div>
+        <div class="field">
+          <label for="spirMod">Darkness modulation <output id="spirModOut">0.9</output></label>
+          <input type="range" id="spirMod" min="0" max="1.5" step="0.1" value="0.9" aria-label="Spiral darkness modulation, 0 to 1.5" />
+          <p class="hint">How far darkness pushes the line in and out. 0 = plain concentric spiral.</p>
+        </div>
+        <div class="field">
+          <label for="spirPaper">Paper cutoff <output id="spirPaperOut">0.05</output></label>
+          <input type="range" id="spirPaper" min="0" max="0.3" step="0.01" value="0.05" aria-label="Spiral paper cutoff, 0 to 0.3" />
+          <p class="hint">The spiral lifts where darkness falls below this.</p>
+        </div>
+      </div>
+
+      <div class="enginePanel" id="panel-dither" style="display:none">
+        <div class="field">
+          <div class="lab"><span>Method</span></div>
+          <select id="dithMethod" aria-label="Dither method">
+            <option value="floyd" selected>Floyd&ndash;Steinberg (serpentine)</option>
+            <option value="atkinson">Atkinson</option>
+            <option value="bayer">Bayer 4&times;4 ordered</option>
+          </select>
+          <p class="hint">Floyd&ndash;Steinberg is the photographic classic; Atkinson keeps only &frac34; of the error for a punchier look; Bayer is a regular ordered screen.</p>
+        </div>
+        <div class="field">
+          <label for="dithCell">Cell size <output id="dithCellOut">2.0 mm</output></label>
+          <input type="range" id="dithCell" min="1.2" max="3.6" step="0.2" value="2" aria-label="Dither cell size, 1.2 to 3.6 millimetres" />
+          <p class="hint">Smaller cells = more detail and many more pen lifts.</p>
+        </div>
+        <div class="field">
+          <label for="dithDot">Dot size <output id="dithDotOut">1.0</output></label>
+          <input type="range" id="dithDot" min="0.5" max="1.5" step="0.1" value="1" aria-label="Dither dot size, 0.5 to 1.5" />
+        </div>
+      </div>
+
+      <h3 class="grouphead" id="shadingAmountHead">Shading amount — every shading engine</h3>
+
+      <div class="field" id="densityField">
+        <div class="lab"><span>Density</span><output id="densityOut">1.0×</output></div>
+        <input type="range" id="density" min="0.5" max="5" step="0.05" value="1" aria-label="Density, 0.5 to 5" />
+        <p class="hint">At 5×, expect a long plot.</p>
+      </div>
+
+      <div class="field" id="capField">
+        <label for="densityCap">Density cap <output id="densityCapOut">100%</output></label>
+        <input type="range" id="densityCap" min="20" max="100" step="1" value="100" aria-label="Density cap, 20 to 100 percent" />
+        <p class="hint">Lower keeps dark areas from going solid.</p>
+      </div>
+
+      <h3 class="grouphead" id="contourHead">Contours</h3>
+
+      <div class="field" id="contourField">
+        <label for="detail">Contour detail <output id="detailOut">55</output></label>
+        <input type="range" id="detail" min="0" max="100" step="0.5" value="55" />
+        <p class="hint">Low = strongest outlines only. High = fine texture.</p>
+      </div>
+
+      <h3 class="grouphead">Tone — every engine</h3>
+
+      <div class="field">
+        <label for="brightness">Brightness <output id="brightnessOut">0</output></label>
+        <input type="range" id="brightness" min="-100" max="100" step="0.5" value="0" aria-label="Brightness, minus 100 to plus 100" />
+      </div>
+
+      <div class="field">
+        <label for="contrast">Contrast <output id="contrastOut">0</output></label>
+        <input type="range" id="contrast" min="-100" max="100" step="0.5" value="0" aria-label="Contrast, minus 100 to plus 100" />
+      </div>
+
+      <div class="field">
+        <label for="dramatic">Dramatic <output id="dramaticOut">35</output></label>
+        <input type="range" id="dramatic" min="0" max="100" step="0.5" value="35" />
+        <p class="hint">Higher pushes midtones darker.</p>
+      </div>
+
+      <div class="field" style="display:grid;gap:8px">
+        <label class="check">
+          <input type="checkbox" id="fillWhite" checked />
+          <span><b>Fill unless truly white</b><span>Only near-white stays blank. Night: only near-black.</span></span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="colour" checked />
+          <span><b>Colour pens (OKLab match)</b><span>Untick for black-only (T0).</span></span>
+        </label>
+      </div>
+
+      <div class="pens" aria-label="Pen palette">
+        <h3>Your pens — BIC Cristal Xtra Bold 1.6 mm</h3>
+        <div class="penrow" id="penrow"></div>
+      </div>
+
+      <div class="actions">
+        <button class="btn download" id="downloadBtn" disabled>↓ Download SVG for plotter</button>
+        <button class="btn" id="copyBtn" disabled>Copy SVG markup</button>
+      </div>
+      <p class="hint" id="copyMsg" role="status" aria-live="polite"></p>
+    </section>
+
+    <!-- PREVIEW -->
+    <div>
+      <section class="panel preview" aria-label="Sketch preview">
+        <div class="preview-head">
+          <h2>Preview — paper sheet</h2>
+          <div class="viewseg" role="group" aria-label="Preview mode">
+            <button type="button" id="viewSketch" aria-pressed="true">Sketch</button>
+            <button type="button" id="viewOrig" aria-pressed="false">Original</button>
+          </div>
+        </div>
+        <div class="prog" id="prog"><i id="progBar"></i></div>
+        <div class="stage">
+          <div class="sheet" id="sheet">
+            <div class="empty" id="emptyState">
+              <div class="big" aria-hidden="true">✎</div>
+              <strong>No photo yet</strong>
+              <p>Upload a photo to start.</p>
+            </div>
+            <div id="svgHost" style="display:none;width:100%;height:100%"></div>
+            <img class="orig" id="origImg" alt="Your original photo, full size" style="display:none" />
+          </div>
+        </div>
+        <div class="stats" aria-label="Sketch statistics">
+          <div class="stat"><b id="stPaths">—</b><span>Paths</span></div>
+          <div class="stat"><b id="stInk">—</b><span>Total ink</span></div>
+          <div class="stat"><b id="stTools">—</b><span>Pens used</span></div>
+          <div class="stat"><b id="stSize">—</b><span>SVG size</span></div>
+        </div>
+        <div class="statusbar"><span id="status">Ready. Pick a photo to start.</span><span id="nightTag"></span></div>
+      </section>
+
+    </div>
+  </div>
+
+  <footer class="methods">
+    <p><strong>Methods &amp; reference implementations.</strong>
+    Weighted-Voronoi stippling and Lloyd relaxation: Secord, <em>Weighted Voronoi Stippling</em> (NPAR 2002) — <a href="https://www.cs.ubc.ca/labs/imager/tr/pdf/secord.2002b.pdf" target="_blank" rel="noopener">paper (PDF)</a>, as implemented by StippleGen and surveyed at <a href="https://dahtah.github.io/imager/stippling.html" target="_blank" rel="noopener">dahtah.github.io/imager/stippling</a>.
+    TSP art: Bosch &amp; Kaplan / Bosch &amp; Herman; the tour stack here (Lloyd-relaxed points, nearest neighbour, 2-opt + Or-opt, uncrossing) follows the recipe described at <a href="https://www.lakolam.com/generators/tspart/" target="_blank" rel="noopener">lakolam.com/generators/tspart</a>.
+    Layered/local hatching behaviour is modelled on <a href="https://www.plotcaster.com/styles/hatch/" target="_blank" rel="noopener">Plotcaster&rsquo;s hatch</a> and its <a href="https://www.plotcaster.com/styles/stipple/" target="_blank" rel="noopener">LBG stipple</a>;
+    error diffusion follows Floyd &amp; Steinberg (1976) — see <a href="https://www.plotcaster.com/algorithms/floyd/" target="_blank" rel="noopener">Plotcaster&rsquo;s Floyd&ndash;Steinberg notes</a>.
+    Flow streamlines use Jobard &amp; Lefer&rsquo;s evenly-spaced streamline placement over an edge-tangent field, the same family as <a href="https://github.com/SonarSonic/DrawingBotV3" target="_blank" rel="noopener">DrawingBotV3</a>&rsquo;s Streamlines PFMs and vpype&rsquo;s flow imager; spiral and squiggle-family variants are catalogued in <a href="https://github.com/mitxela/plotterfun/blob/master/main.htm" target="_blank" rel="noopener">mitxela&rsquo;s plotterfun</a>.</p>
+  </footer>
+</div>
+
+<canvas id="work" class="sr" aria-hidden="true"></canvas>
+
+<script>
+"use strict";
+/* ============ Pens: BIC Cristal Xtra Bold, sampled from caps ============ */
+var PENS=[
+  {t:"T0",name:"Black",hex:"#2c2d30"},
+  {t:"T1",name:"Red",hex:"#e42e2a"},
+  {t:"T2",name:"Pink",hex:"#c65a93"},
+  {t:"T3",name:"Sky blue",hex:"#08b1dc"},
+  {t:"T4",name:"Lime",hex:"#7bae44"},
+  {t:"T5",name:"Turquoise",hex:"#0497bd"},
+  {t:"T6",name:"Blue",hex:"#2d4e9e"},
+  {t:"T7",name:"Violet",hex:"#533c94"}
+];
+function hexRgb(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
+function srgbToLin(c){c/=255;return c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4);}
+function rgbToOklab(r,g,b){
+  var R=srgbToLin(r),G=srgbToLin(g),B=srgbToLin(b);
+  var l=0.4122214708*R+0.5363325363*G+0.0514459929*B;
+  var m=0.2119034982*R+0.6806995451*G+0.1073969566*B;
+  var s=0.0883024619*R+0.2817188376*G+0.6299787005*B;
+  l=Math.cbrt(l);m=Math.cbrt(m);s=Math.cbrt(s);
+  return [0.2104542553*l+0.7936177850*m-0.0040720468*s,
+          1.9779984951*l-2.4285922050*m+0.4505937099*s,
+          0.0259040371*l+0.7827717662*m-0.8086757660*s];
+}
+PENS.forEach(function(p){var c=hexRgb(p.hex);p.rgb=c;p.lab=rgbToOklab(c[0],c[1],c[2]);});
+/* BIC Cristal datasheet line width: the 1.6 mm figure is the ball diameter,
+   the drawn line is 0.42 mm. All spacing below derives from this w. */
+var LINE_W=0.42;
+function nearestPen(r,g,b,colour){
+  if(!colour) return PENS[0];
+  var lab=rgbToOklab(r,g,b),best=PENS[0],bd=1e9;
+  for(var i=0;i<PENS.length;i++){var L=PENS[i].lab;
+    var d=(lab[0]-L[0])*(lab[0]-L[0])+(lab[1]-L[1])*(lab[1]-L[1])+(lab[2]-L[2])*(lab[2]-L[2]);
+    if(d<bd){bd=d;best=PENS[i];}}
+  return best;
+}
+/* pen swatches */
+document.getElementById("penrow").innerHTML=PENS.map(function(p){
+  return '<div class="pen"><i style="background:'+p.hex+'"></i><span>'+p.t+'</span></div>';
+}).join("");
+
+/* ============ State / elements ============ */
+var $=function(id){return document.getElementById(id);};
+var state={img:null,imgURL:null,fileName:"",svg:"",paths:0,view:"sketch",busy:false};
+var shading="flowfield";
+var hatchAngle=0,strokeLen=1; /* engine-specific slider state (Gradient angle, Flow stroke length) */
+var waveOrient="h",waveDrive="both"; /* Wave squiggle state */
+/* Engines ported from Photo to Plot: each is a complete drawing of its own,
+   so they skip the shared Density/cap group and the contour pass. */
+var PORTED={tsp:1,colour:1,stipple:1,spiral:1,dither:1};
+/* seeded rng for the ported samplers — only "New variation" reseeds it */
+var pSeed=1234567;
+function pRng(){pSeed=(pSeed*1664525+1013904223)>>>0;return pSeed/4294967296;}
+var SHADING_HINTS={
+  flowfield:"Smoothest lines. Fast plot.",
+  flow:"Best for dark, textured backgrounds.",
+  gradient:"Best on smooth walls and gradients.",
+  wave:"Smooth sine rows — darkness sets the wiggle.",
+  off:"Edges only. Fastest plot.",
+  tsp:"One continuous line through sampled points.",
+  colour:"A TSP scribble per pen, colours matched in OKLab.",
+  stipple:"Dots placed by darkness — every dot is a pen lift.",
+  spiral:"One spiral, bunched where the photo is dark.",
+  dither:"Error-diffusion halftone dots on a grid."
+};
+function bindSeg(id,fn){
+  $(id).addEventListener("click",function(e){
+    var b=e.target.closest("button");if(!b)return;
+    Array.prototype.forEach.call($(id).querySelectorAll("button"),function(x){x.setAttribute("aria-pressed","false");});
+    b.setAttribute("aria-pressed","true");fn(b.getAttribute("data-v"),b);
+  });
+}
+bindSeg("shadingSeg",function(v){
+  shading=v;
+  $("shadingOut").textContent={flowfield:"Flow field",flow:"Flow",gradient:"Gradient",wave:"Wave",off:"Off",tsp:"TSP",colour:"Colour TSP",stipple:"Stipple",spiral:"Spiral",dither:"Dither"}[v];
+  $("shadingHint").textContent=SHADING_HINTS[v];
+  /* each engine shows only its own bespoke controls */
+  ["flowfield","flow","gradient","wave","off","tsp","colour","stipple","spiral","dither"].forEach(function(k){
+    $("panel-"+k).style.display=(k===v)?"":"none";
+  });
+  /* Density and the cap only feed Sketch's shading engines — the ported
+     engines carry their own amount controls, so hide the group for them
+     and for Contours only */
+  var noShade=(v==="off"||!!PORTED[v]);
+  $("densityField").style.display=noShade?"none":"";
+  $("capField").style.display=noShade?"none":"";
+  $("shadingAmountHead").style.display=noShade?"none":"";
+  /* Wave squiggle is pure sine rows and the ported engines are complete
+     drawings on their own — contours would just clutter them */
+  var noContour=(v==="wave"||!!PORTED[v]);
+  $("contourHead").style.display=noContour?"none":"";
+  $("contourField").style.display=noContour?"none":"";
+});
+bindSeg("waveOrientSeg",function(v){
+  waveOrient=v;
+  $("waveOrientOut").textContent=(v==="h")?"Horizontal":"Vertical";
+  syncWaveCount(); /* perpendicular size changes with direction */
+});
+bindSeg("waveDriveSeg",function(v){
+  waveDrive=v;
+  $("waveDriveOut").textContent={amp:"Amplitude",freq:"Frequency",both:"Amp + freq"}[v];
+});
+function syncDensity(){
+  var v=parseFloat($("density").value);
+  $("densityOut").textContent=v.toFixed(2).replace(/0$/,"")+"×";
+}
+$("density").addEventListener("input",syncDensity);
+$("detail").addEventListener("input",function(){$("detailOut").textContent=$("detail").value;});
+$("dramatic").addEventListener("input",function(){$("dramaticOut").textContent=$("dramatic").value;});
+$("densityCap").addEventListener("input",function(){$("densityCapOut").textContent=$("densityCap").value+"%";});
+function syncFlowSpacing(){
+  var v=parseFloat($("flowSpacing").value);
+  $("flowSpacingOut").textContent=v.toFixed(2)+"× · "+(0.5*v).toFixed(1)+"–"+(2.9*v).toFixed(1)+" mm";
+}
+$("flowSpacing").addEventListener("input",syncFlowSpacing);
+$("smooth").addEventListener("input",function(){$("smoothOut").textContent=parseFloat($("smooth").value).toFixed(1)+" mm";});
+$("strokeLen").addEventListener("input",function(){strokeLen=parseFloat($("strokeLen").value);$("strokeLenOut").textContent=strokeLen.toFixed(2)+"×";});
+function setHatch(v){
+  hatchAngle=parseFloat(v);
+  $("hatchAngle").value=v;
+  $("hatchAngleOut").textContent=v+"°";
+}
+$("hatchAngle").addEventListener("input",function(){setHatch(this.value);});
+$("waveSpacing").addEventListener("input",function(){$("waveSpacingOut").textContent=parseFloat($("waveSpacing").value).toFixed(1)+" mm";syncWaveCount();});
+/* Scan lines <-> row spacing: two views of the same setting. The count is
+   the perpendicular size of the fitted drawing (mm) divided by the spacing;
+   dragging the count rewrites the spacing, and vice versa. Exact once a
+   photo is loaded; before that it uses a typical fitted size. */
+function wavePerpMm(){
+  if(state.img&&state.img.naturalWidth){
+    var sc0=Math.min(1,680/state.img.naturalWidth);
+    var W=Math.max(80,Math.round(state.img.naturalWidth*sc0));
+    var H=Math.max(80,Math.round(state.img.naturalHeight*sc0));
+    var m=Math.min(108/W,130/H);
+    return waveOrient==="h"?H*m:W*m;
+  }
+  return waveOrient==="h"?110:100;
+}
+function syncWaveCount(){
+  var c=Math.round(wavePerpMm()/parseFloat($("waveSpacing").value));
+  if(c<14)c=14;if(c>120)c=120;
+  $("waveCount").value=c;$("waveCountOut").textContent=c;
+}
+function syncWaveSpacingFromCount(){
+  var c=parseFloat($("waveCount").value);
+  $("waveCountOut").textContent=c;
+  var sp=wavePerpMm()/c;
+  if(sp<0.8)sp=0.8;if(sp>9)sp=9;
+  $("waveSpacing").value=sp;
+  $("waveSpacingOut").textContent=sp.toFixed(1)+" mm";
+}
+$("waveCount").addEventListener("input",syncWaveSpacingFromCount);
+$("waveAmp").addEventListener("input",function(){$("waveAmpOut").textContent=parseFloat($("waveAmp").value).toFixed(1)+" mm";});
+$("waveLen").addEventListener("input",function(){$("waveLenOut").textContent=parseFloat($("waveLen").value).toFixed(1)+" mm";});
+/* ported-engine slider readouts */
+function bindRange(id,out,fmt){var el=$(id);var f=function(){$(out).textContent=fmt(parseFloat(el.value));};el.addEventListener("input",f);f();}
+bindRange("tspPoints","tspPointsOut",function(v){return Math.round(v).toLocaleString("en-US");});
+bindRange("tspGamma","tspGammaOut",function(v){return v.toFixed(2).replace(/0$/,"");});
+bindRange("tspEdge","tspEdgeOut",function(v){return v.toFixed(1);});
+bindRange("tspRelax","tspRelaxOut",function(v){return ""+Math.round(v);});
+bindRange("tspSmooth","tspSmoothOut",function(v){return ""+Math.round(v);});
+bindRange("colPoints","colPointsOut",function(v){return Math.round(v).toLocaleString("en-US");});
+bindRange("colPaper","colPaperOut",function(v){return v.toFixed(2);});
+bindRange("colSat","colSatOut",function(v){return v.toFixed(3);});
+bindRange("stipRelax","stipRelaxOut",function(v){return ""+Math.round(v);});
+bindRange("stipPoints","stipPointsOut",function(v){return Math.round(v).toLocaleString("en-US");});
+bindRange("stipGamma","stipGammaOut",function(v){return v.toFixed(2).replace(/0$/,"");});
+bindRange("stipR","stipROut",function(v){return v.toFixed(1)+" mm";});
+bindRange("spirPitch","spirPitchOut",function(v){return v.toFixed(1)+" mm";});
+bindRange("spirMod","spirModOut",function(v){return v.toFixed(1);});
+bindRange("spirPaper","spirPaperOut",function(v){return v.toFixed(2);});
+bindRange("dithCell","dithCellOut",function(v){return v.toFixed(1)+" mm";});
+bindRange("dithDot","dithDotOut",function(v){return v.toFixed(1);});
+$("tspReseed").addEventListener("click",function(){pSeed=(Math.random()*1e9)>>>0;if(state.img&&!state.busy)convert();});
+$("dithMethod").addEventListener("change",function(){if(state.img&&!state.busy)convert();});
+function signedOut(v){return (v>0?"+":"")+v;}
+$("brightness").addEventListener("input",function(){$("brightnessOut").textContent=signedOut($("brightness").value);});
+$("contrast").addEventListener("input",function(){$("contrastOut").textContent=signedOut($("contrast").value);});
+
+/* ============ Upload ============ */
+var drop=$("drop"),fileInput=$("file");
+drop.addEventListener("click",function(){fileInput.click();});
+drop.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();fileInput.click();}});
+drop.addEventListener("dragover",function(e){e.preventDefault();drop.classList.add("drag");});
+drop.addEventListener("dragleave",function(){drop.classList.remove("drag");});
+drop.addEventListener("drop",function(e){e.preventDefault();drop.classList.remove("drag");if(e.dataTransfer.files&&e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0]);});
+fileInput.addEventListener("change",function(){if(fileInput.files[0])loadFile(fileInput.files[0]);});
+$("replaceBtn").addEventListener("click",function(){fileInput.click();});
+function loadFile(f){
+  if(!/^image\//.test(f.type)){setStatus("That file isn't an image — pick a JPG, PNG or WebP.");return;}
+  var url=URL.createObjectURL(f);
+  var img=new Image();
+  img.onload=function(){
+    if(state.imgURL)URL.revokeObjectURL(state.imgURL);
+    state.img=img;state.imgURL=url;state.fileName=f.name;
+    $("thumb").src=url;$("origImg").src=url;
+    $("fname").textContent=f.name;
+    $("fname").title=f.name;
+    $("fmeta").textContent=img.naturalWidth+" × "+img.naturalHeight+" · "+Math.max(1,Math.round(f.size/1024))+" KB";
+    $("thumbrow").classList.add("show");
+    syncWaveCount(); /* fitted size is known now, so the count is exact */
+    setStatus("Photo loaded. Converting…");
+    convert();
+  };
+  img.onerror=function(){setStatus("Couldn't read that image — try another file.");};
+  img.src=url;
+}
+function setStatus(t){$("status").textContent=t;}
+function setProgress(p){
+  if(p==null){$("prog").classList.remove("show");return;}
+  $("prog").classList.add("show");$("progBar").style.width=Math.round(p*100)+"%";
+}
+
+/* view toggle */
+function setView(v){
+  state.view=v;
+  $("viewSketch").setAttribute("aria-pressed",v==="sketch"?"true":"false");
+  $("viewOrig").setAttribute("aria-pressed",v==="orig"?"true":"false");
+  var has=!!state.svg;
+  $("svgHost").style.display=(v==="sketch"&&has)?"block":"none";
+  $("origImg").style.display=(v==="orig"&&state.img)?"block":"none";
+  $("emptyState").style.display=(!has&&v==="sketch")?"block":"none";
+  if(v==="orig"&&!state.img)$("emptyState").style.display="block";
+}
+$("viewSketch").addEventListener("click",function(){setView("sketch");});
+$("viewOrig").addEventListener("click",function(){setView("orig");});
+
+/* ============ Image maths ============ */
+function gaussBlur(src,W,H,sigma){
+  var r=Math.max(1,Math.round(sigma*1.5)),k=[],sum=0,i,x,y;
+  for(i=-r;i<=r;i++){var v=Math.exp(-(i*i)/(2*sigma*sigma));k.push(v);sum+=v;}
+  for(i=0;i<k.length;i++)k[i]/=sum;
+  var tmp=new Float32Array(W*H),out=new Float32Array(W*H);
+  for(y=0;y<H;y++)for(x=0;x<W;x++){var a=0;for(i=-r;i<=r;i++){var xx=Math.min(W-1,Math.max(0,x+i));a+=src[y*W+xx]*k[i+r];}tmp[y*W+x]=a;}
+  for(y=0;y<H;y++)for(x=0;x<W;x++){var b=0;for(i=-r;i<=r;i++){var yy=Math.min(H-1,Math.max(0,y+i));b+=tmp[yy*W+x]*k[i+r];}out[y*W+x]=b;}
+  return out;
+}
+/* trace a streamline through angle field; returns [[x,y],...] */
+function traceLine(ang,W,H,x0,y0,step,maxSteps,dark,stopBelow){
+  var pts=[[x0,y0]],x=x0,y=y0,i;
+  for(i=0;i<maxSteps;i++){
+    var xi=Math.round(x),yi=Math.round(y);if(xi<0||yi<0||xi>=W||yi>=H)break;
+    if(dark&&dark[yi*W+xi]<stopBelow)break;
+    var a=ang[yi*W+xi];
+    var nx=x+Math.cos(a)*step,ny=y+Math.sin(a)*step;
+    /* keep direction consistent (no 180 flips) */
+    var px=pts[pts.length-1];
+    if(pts.length>1){var qx=pts[pts.length-2];if((nx-px[0])*(px[0]-qx[0])+(ny-px[1])*(px[1]-qx[1])<0){nx=x-Math.cos(a)*step;ny=y-Math.sin(a)*step;}}
+    x=nx;y=ny;pts.push([x,y]);
+  }
+  var back=[[x0,y0]];x=x0;y=y0;
+  for(i=0;i<maxSteps;i++){
+    var xj=Math.round(x),yj=Math.round(y);if(xj<0||yj<0||xj>=W||yj>=H)break;
+    if(dark&&dark[yj*W+xj]<stopBelow)break;
+    var a2=ang[yj*W+xj];
+    var mx=x-Math.cos(a2)*step,my=y-Math.sin(a2)*step;
+    var pb=back[back.length-1];
+    if(back.length>1){var qb=back[back.length-2];if((mx-pb[0])*(pb[0]-qb[0])+(my-pb[1])*(pb[1]-qb[1])<0){mx=x+Math.cos(a2)*step;my=y+Math.sin(a2)*step;}}
+    x=mx;y=my;back.push([x,y]);
+  }
+  back.reverse();back.pop();
+  return back.concat(pts);
+}
+function simplify(pts,minDist){
+  if(pts.length<3)return pts;
+  var out=[pts[0]];
+  for(var i=1;i<pts.length-1;i++){
+    var a=out[out.length-1],b=pts[i];
+    if(Math.hypot(b[0]-a[0],b[1]-a[1])>=minDist)out.push(b);
+  }
+  out.push(pts[pts.length-1]);return out;
+}
+/* Ramer–Douglas–Peucker: drop points within eps of the chord, so collinear
+   runs and pixel staircase collapse without moving the line */
+function rdp(pts,eps){
+  if(pts.length<3)return pts;
+  var keep=new Uint8Array(pts.length);keep[0]=keep[pts.length-1]=1;
+  var stack=[[0,pts.length-1]];
+  while(stack.length){
+    var seg=stack.pop(),a=pts[seg[0]],b=pts[seg[1]];
+    var dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy)||1e-9;
+    var dmax=0,idx=-1;
+    for(var i=seg[0]+1;i<seg[1];i++){
+      var d=Math.abs((pts[i][0]-a[0])*dy-(pts[i][1]-a[1])*dx)/len;
+      if(d>dmax){dmax=d;idx=i;}
+    }
+    if(dmax>eps&&idx>0){keep[idx]=1;stack.push([seg[0],idx]);stack.push([idx,seg[1]]);}
+  }
+  var out=[];for(var j=0;j<pts.length;j++)if(keep[j])out.push(pts[j]);
+  return out.length>=2?out:pts;
+}
+function chaikinPass(pts){
+  if(pts.length<3)return pts;
+  var out=[pts[0]];
+  for(var i=0;i<pts.length-1;i++){
+    var a=pts[i],b=pts[i+1];
+    out.push([a[0]*0.75+b[0]*0.25,a[1]*0.75+b[1]*0.25]);
+    out.push([a[0]*0.25+b[0]*0.75,a[1]*0.25+b[1]*0.75]);
+  }
+  out.push(pts[pts.length-1]);
+  return out;
+}
+/* one Chaikin pass, but split at turns sharper than ~1 rad so real corners
+   stay hard corners; only the gentle stretches are smoothed */
+function smoothFlowLine(pts){
+  if(pts.length<3)return pts;
+  var out=[],seg=[pts[0]];
+  function flush(){
+    var src=(seg.length>=3)?chaikinPass(seg):seg;
+    for(var k=(out.length?1:0);k<src.length;k++)out.push(src[k]);
+  }
+  for(var i=1;i<pts.length-1;i++){
+    var a=pts[i-1],b=pts[i],c=pts[i+1];
+    var v1x=b[0]-a[0],v1y=b[1]-a[1],v2x=c[0]-b[0],v2y=c[1]-b[1];
+    var m1=Math.hypot(v1x,v1y),m2=Math.hypot(v2x,v2y),ang=0;
+    if(m1>1e-6&&m2>1e-6){var cs=(v1x*v2x+v1y*v2y)/(m1*m2);if(cs>1)cs=1;if(cs<-1)cs=-1;ang=Math.acos(cs);}
+    seg.push(b);
+    if(ang>1.0){flush();seg=[b];}
+  }
+  seg.push(pts[pts.length-1]);flush();
+  return out.length>=2?out:pts;
+}
+function pathLen(pts){var L=0;for(var i=1;i<pts.length;i++)L+=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);return L;}
+/* thin a densely sampled sine down to ~9 points per wave for plot speed:
+   keep a point every minStep px and always keep each peak and trough, so
+   the polyline still reads as a smooth sine but with far fewer, longer
+   segments the plotter can run through at speed */
+function thinSine(pts,horiz,minStep){
+  if(pts.length<4)return pts;
+  var out=[pts[0]],last=pts[0];
+  for(var i=1;i<pts.length-1;i++){
+    var off=horiz?1:0;
+    var d1=pts[i][off]-pts[i-1][off],d2=pts[i+1][off]-pts[i][off];
+    var extremum=d1*d2<0; /* direction change in the offset = peak or trough */
+    if(extremum||Math.hypot(pts[i][0]-last[0],pts[i][1]-last[1])>=minStep){out.push(pts[i]);last=pts[i];}
+  }
+  out.push(pts[pts.length-1]);
+  return out;
+}
+/* order paths so each starts near where the previous ended, reversing a path
+   when its far end is closer — cuts pen-up travel without changing the drawing */
+function orderNN(list){
+  if(list.length<3)return list;
+  var rest=list.slice(),out=[rest.shift()];
+  var ex=out[0].pts[out[0].pts.length-1][0],ey=out[0].pts[out[0].pts.length-1][1];
+  while(rest.length){
+    var bi=0,bd=Infinity,brev=false;
+    for(var i=0;i<rest.length;i++){
+      var p=rest[i].pts,a=p[0],b=p[p.length-1];
+      var d1=(a[0]-ex)*(a[0]-ex)+(a[1]-ey)*(a[1]-ey);
+      var d2=(b[0]-ex)*(b[0]-ex)+(b[1]-ey)*(b[1]-ey);
+      if(d1<bd){bd=d1;bi=i;brev=false;}
+      if(d2<bd){bd=d2;bi=i;brev=true;}
+    }
+    var nxt=rest.splice(bi,1)[0];
+    if(brev)nxt.pts.reverse();
+    out.push(nxt);
+    ex=nxt.pts[nxt.pts.length-1][0];ey=nxt.pts[nxt.pts.length-1][1];
+  }
+  return out;
+}
+/* linemerge: join paths of one pen whose endpoints nearly touch (<= tol,
+   in the caller's units) into single paths — each join removes a pen lift.
+   Only same-flag paths merge (contours keep their own stroke class), and a
+   join never draws more than tol of extra line. */
+function mergeStrokes(list,tol){
+  var paths=list.filter(function(s){return !!s.pts;});
+  if(paths.length<2||tol<=0)return paths;
+  var tol2=tol*tol,used=new Set(),out=[];
+  var buckets=new Map();
+  function bk(x,y){return Math.floor(x/tol)+","+Math.floor(y/tol);}
+  paths.forEach(function(s,i){
+    [0,1].forEach(function(e){
+      var p=e?s.pts[s.pts.length-1]:s.pts[0];
+      var k=bk(p[0],p[1]);
+      if(!buckets.has(k))buckets.set(k,[]);
+      buckets.get(k).push({i:i,e:e});
+    });
+  });
+  function findMate(cur,atStart){
+    var p=atStart?cur.pts[0]:cur.pts[cur.pts.length-1];
+    var bx=Math.floor(p[0]/tol),by=Math.floor(p[1]/tol);
+    for(var yy=by-1;yy<=by+1;yy++)for(var xx=bx-1;xx<=bx+1;xx++){
+      var arr=buckets.get(xx+","+yy);if(!arr)continue;
+      for(var t=0;t<arr.length;t++){
+        var cand=paths[arr[t].i];
+        if(used.has(cand))continue;
+        if(!!cand.contour!==!!cur.contour)continue;
+        var q=arr[t].e?cand.pts[cand.pts.length-1]:cand.pts[0];
+        var dx=q[0]-p[0],dy=q[1]-p[1];
+        if(dx*dx+dy*dy<=tol2)return{cand:cand,candEnd:arr[t].e};
+      }
+    }
+    return null;
+  }
+  paths.forEach(function(s){
+    if(used.has(s))return;
+    used.add(s);
+    var cur={pts:s.pts.slice(),pen:s.pen};
+    if(s.contour)cur.contour=true;
+    var grew=true,guard=0;
+    while(grew&&guard++<64){
+      grew=false;
+      var m=findMate(cur,false);
+      if(m){used.add(m.cand);var cp=m.cand.pts;if(!m.candEnd)cp=cp.slice().reverse();cur.pts=cur.pts.concat(cp.slice(1));grew=true;continue;}
+      m=findMate(cur,true);
+      if(m){used.add(m.cand);var cp2=m.cand.pts;if(m.candEnd)cp2=cp2.slice().reverse();cur.pts=cp2.concat(cur.pts.slice(1));grew=true;}
+    }
+    out.push(cur);
+  });
+  return out;
+}
+
+/* ============ Convert (automatic: on upload and on any control change) ============ */
+["shadingSeg","waveOrientSeg","waveDriveSeg"].forEach(function(id){$(id).addEventListener("click",function(){if(state.img&&!state.busy)setTimeout(convert,30);});});
+["density","detail","dramatic","densityCap","brightness","contrast","flowSpacing","smooth","strokeLen","hatchAngle","waveSpacing","waveAmp","waveLen","waveCount","tspPoints","tspGamma","tspEdge","tspRelax","tspSmooth","colPoints","colPaper","colSat","stipRelax","stipPoints","stipGamma","stipR","spirPitch","spirMod","spirPaper","dithCell","dithDot"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
+["fillWhite","colour","stipVary","colSmooth","adaptiveSmooth"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
+
+function convert(){
+  if(!state.img||state.busy)return;
+  state.busy=true;$("downloadBtn").disabled=true;$("copyBtn").disabled=true;
+  setProgress(0.05);setStatus("Reading photo…");
+  setTimeout(function(){try{runConvert();}catch(err){setStatus("Conversion hit a snag: "+err.message);setProgress(null);state.svg="";state.paths=0;$("stPaths").textContent="—";$("stInk").textContent="—";$("stTools").textContent="—";$("stSize").textContent="—";$("svgHost").innerHTML="";setView("sketch");}state.busy=false;},30);
+}
+function runConvert(){
+  var img=state.img;
+  var MAXW=680,scale=Math.min(1,MAXW/img.naturalWidth);
+  var W=Math.max(80,Math.round(img.naturalWidth*scale)),H=Math.max(80,Math.round(img.naturalHeight*scale));
+  var mmPx=Math.min((118-2*5)/W,(140-2*5)/H); /* mm per image px at plot scale */
+  var cv=$("work");cv.width=W;cv.height=H;
+  var ctx=cv.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(img,0,0,W,H);
+  var data=ctx.getImageData(0,0,W,H).data;
+  var N=W*H,i,x,y;
+  var lum=new Float32Array(N),R=new Uint8Array(N),G=new Uint8Array(N),B=new Uint8Array(N);
+  var mean=0;
+  for(i=0;i<N;i++){R[i]=data[i*4];G[i]=data[i*4+1];B[i]=data[i*4+2];
+    lum[i]=0.2126*R[i]+0.7152*G[i]+0.0722*B[i];mean+=lum[i];}
+  mean/=N;
+  var isNight=mean<92;
+  $("nightTag").textContent=isNight?"Night photo — dark sky left as paper.":"";
+  setProgress(0.2);
+
+  /* tone remap: user brightness / contrast first (lumAdj), then dramatic, then density cap.
+     At defaults (brightness 0, contrast 0, cap 100%) lumAdj == lum and dark is unchanged from before. */
+  var dram=parseFloat($("dramatic").value)/100; /* 0..1 */
+  var gamma=1-0.45*dram, contrastD=1+0.7*dram;
+  var brightOff=parseFloat($("brightness").value)/100*0.35; /* -0.35..+0.35 */
+  var userContrast=1+parseFloat($("contrast").value)/100; /* 0..2 */
+  if(userContrast<0.05)userContrast=0.05;
+  var densityCap=parseFloat($("densityCap").value)/100; /* 0.2..1 */
+  var lumAdj=new Float32Array(N);
+  for(i=0;i<N;i++){
+    var vb=lum[i]/255;
+    vb=(vb-0.5)*userContrast+0.5+brightOff;
+    lumAdj[i]=Math.min(1,Math.max(0,vb))*255;
+  }
+  var dark=new Float32Array(N);
+  var darkNC=new Float32Array(N); /* same tone pipeline without the cap — the ported engines' darkness source */
+  var darkLin=new Float32Array(N); /* linear-light darkness (1 - linear luminance): the physical ink coverage a tone needs */
+  for(i=0;i<N;i++){
+    var v=lumAdj[i]/255;
+    v=Math.pow(v,gamma);
+    v=(v-0.5)*contrastD+0.5; v=Math.min(1,Math.max(0,v));
+    var d=1-v;
+    darkNC[i]=d;
+    darkLin[i]=1-srgbToLin(v*255);
+    if(d>densityCap)d=densityCap; /* cap: no area shades darker than the cap, so top tone levels stop triggering */
+    dark[i]=d;
+  }
+  /* Edge detection smooths more at low contour detail, so fine texture (brick,
+     foliage, noise) stops producing edges at all instead of surviving the
+     threshold. Detail is read here because the blur feeds the Sobel pass. */
+  var detail=parseFloat($("detail").value)/100;
+  var blur=gaussBlur(lumAdj,W,H,1.05+(1-detail)*1.35);
+  /* Sobel on blurred luminance */
+  var gx=new Float32Array(N),gy=new Float32Array(N),mag=new Float32Array(N);
+  for(y=1;y<H-1;y++)for(x=1;x<W-1;x++){
+    var a=y*W+x;
+    var sx=-blur[a-W-1]-2*blur[a-1]-blur[a+W-1]+blur[a-W+1]+2*blur[a+1]+blur[a+W+1];
+    var sy=-blur[a-W-1]-2*blur[a-W]-blur[a-W+1]+blur[a+W-1]+2*blur[a+W]+blur[a+W+1];
+    gx[a]=sx;gy[a]=sy;mag[a]=Math.hypot(sx,sy);
+  }
+  /* smoothed flow field: tangent to gradient, flat areas -> 45 deg */
+  var fx=gaussBlur(gx,W,H,3),fy=gaussBlur(gy,W,H,3);
+  var flow=new Float32Array(N);
+  var d45x=Math.cos(Math.PI/4),d45y=Math.sin(Math.PI/4);
+  for(i=0;i<N;i++){
+    var vx=-fy[i],vy=fx[i];var m=Math.hypot(vx,vy);
+    var flat=Math.min(1,Math.max(0,1-mag[i]/60)); /* 1 = flat */
+    if(m<1e-4){vx=d45x;vy=d45y;}
+    else{vx/=m;vy/=m;
+      vx=vx*(1-flat)+d45x*flat; vy=vy*(1-flat)+d45y*flat;
+      var mm=Math.hypot(vx,vy)||1;vx/=mm;vy/=mm;}
+    flow[i]=Math.atan2(vy,vx);
+  }
+  setProgress(0.4);
+
+  var density=parseFloat($("density").value);
+  var fillWhite=$("fillWhite").checked;
+  var colour=$("colour").checked;
+  /* paper test per pixel */
+  function isPaper(idx){
+    if(!fillWhite) return dark[idx]<0.10;
+    if(isNight) return lumAdj[idx]<45;
+    return lumAdj[idx]>245;
+  }
+  /* pen assignment per ~3 mm cell, by majority vote over the cell's pixels:
+     a whole cell's strokes share one pen, so colour regions stay coherent
+     blocks instead of flipping pens wherever two palette colours are close */
+  var cellPx=Math.max(6,Math.round(3/mmPx));
+  var cellCols=Math.ceil(W/cellPx),cellRows=Math.ceil(H/cellPx);
+  var cellPen=new Array(cellCols*cellRows);
+  for(var cyy=0;cyy<cellRows;cyy++)for(var cxx=0;cxx<cellCols;cxx++){
+    if(!colour){cellPen[cyy*cellCols+cxx]=PENS[0];continue;}
+    var votes={},bestPen=PENS[0],bestN=-1;
+    for(var yyy=cyy*cellPx;yyy<Math.min(H,(cyy+1)*cellPx);yyy+=3)
+      for(var xxx=cxx*cellPx;xxx<Math.min(W,(cxx+1)*cellPx);xxx+=3){
+        var pp=nearestPen(R[yyy*W+xxx],G[yyy*W+xxx],B[yyy*W+xxx],true);
+        var nn2=(votes[pp.t]=(votes[pp.t]||0)+1);
+        if(nn2>bestN){bestN=nn2;bestPen=pp;}
+      }
+    cellPen[cyy*cellCols+cxx]=bestPen;
+  }
+  function penAtPx(px,py){
+    var ax=Math.min(cellCols-1,Math.max(0,Math.floor(px/cellPx)));
+    var ay=Math.min(cellRows-1,Math.max(0,Math.floor(py/cellPx)));
+    return cellPen[ay*cellCols+ax];
+  }
+
+  var strokes=[]; /* {pts, pen} */
+  function addStroke(pts,forcedPen,simpDist){
+    if(pts.length<2)return;
+    var L=pathLen(pts);if(L<3)return;
+    var mid=pts[Math.floor(pts.length/2)];
+    var pen=forcedPen||penAtPx(mid[0],mid[1]);
+    strokes.push({pts:simplify(pts,simpDist||1.4),pen:pen});
+  }
+
+  /* ---- shading: gradient (straight hatch, clipped runs) ---- */
+  function gradientPass(spacingScale,levels){
+    var dirs=[Math.PI/4,-Math.PI/4,0];
+    for(var li=0;li<levels;li++){
+      var thr=0.10+li*0.20; /* darkness threshold per level */
+      var spacing=(30-li*5.5)/density*spacingScale; if(spacing<2.2)spacing=2.2;
+      var dir=dirs[li%dirs.length]+hatchAngle*Math.PI/180; /* Hatch angle slider rotates the whole set */
+      var dx=Math.cos(dir),dy=Math.sin(dir),px=-dy,py=dx;
+      var diag=Math.hypot(W,H);
+      for(var o=-diag;o<diag;o+=spacing){
+        var run=null;
+        for(var s=-diag;s<diag;s+=2){
+          var cx=W/2+dx*s+px*o, cy=H/2+dy*s+py*o;
+          var xi=Math.round(cx),yi=Math.round(cy);
+          var ok=xi>=0&&yi>=0&&xi<W&&yi<H&&dark[yi*W+xi]>=thr&&!isPaper(yi*W+xi);
+          if(ok){if(!run)run=[[cx,cy]];else run.push([cx,cy]);}
+          else{if(run&&run.length>3)addStroke(run);run=null;}
+        }
+        if(run&&run.length>3)addStroke(run);
+      }
+    }
+  }
+  /* ---- shading: flow (streamlines per tone level) ---- */
+  function flowPass(spacingScale){
+    var levels=[0.03,0.22,0.42,0.62,0.80];
+    var occupied=new Uint8Array(N);
+    for(var li=0;li<levels.length;li++){
+      var thr=levels[li];
+      var spacing=(26-li*4.2)/density*spacingScale; if(spacing<2.4)spacing=2.4;
+      var off=(li%2)*spacing*0.5;
+      for(var sy=spacing*0.5+off;sy<H;sy+=spacing){
+        for(var sx=spacing*0.5+((Math.round(sy/spacing)%2)*spacing*0.35);sx<W;sx+=spacing){
+          var jx=sx+(Math.sin(sy*12.9898+sx*0.7)*0.5)*spacing*0.3;
+          var xi=Math.min(W-1,Math.max(0,Math.round(jx))),yi=Math.min(H-1,Math.max(0,Math.round(sy)));
+          var idx=yi*W+xi;
+          if(dark[idx]<thr||isPaper(idx))continue;
+          if(occupied[idx])continue;
+          var maxSteps=Math.max(3,Math.round((li===0?7:26)*strokeLen)); /* light level = short dashes; Stroke length slider scales both */
+          var pts=traceLine(flow,W,H,jx,sy,2.2,maxSteps,dark,Math.max(0,thr-0.14));
+          if(pathLen(pts)<(li===0?5:9))continue;
+          pts.forEach(function(p){var a=Math.min(H-1,Math.max(0,Math.round(p[1])))*W+Math.min(W-1,Math.max(0,Math.round(p[0])));occupied[a]=1;});
+          addStroke(pts);
+        }
+      }
+    }
+  }
+  /* ---- shading: flow field (evenly spaced streamlines, Plotcaster-style) ----
+     Direction comes from the shared field (buildField): a structure tensor
+     smoothed coherence-adaptively, so the angle is sign-invariant and never
+     flips, and flat areas drift to the 45 deg diagonal. Streamlines are
+     seeded darkest-first and kept evenly spaced, the spacing set by the
+     0.42 mm line over linear-light coverage: 0.5 mm in shadow out to
+     2.9 mm in light, paper left blank. Traced lines are RDP-simplified at
+     0.1 mm, then given one Chaikin pass split at sharp corners. */
+  function flowFieldPass(){
+    var dv=[0,0];
+    function tensorDir(x,y){ /* bilinear sample of the shared direction field */
+      if(x<0)x=0;if(y<0)y=0;if(x>W-2)x=W-2;if(y>H-2)y=H-2;
+      var x0=Math.floor(x),y0=Math.floor(y),fx=x-x0,fy=y-y0;
+      var i00=y0*W+x0;
+      var dx=(flowXi[i00]*(1-fx)+flowXi[i00+1]*fx)*(1-fy)+(flowXi[i00+W]*(1-fx)+flowXi[i00+W+1]*fx)*fy;
+      var dy=(flowYi[i00]*(1-fx)+flowYi[i00+1]*fx)*(1-fy)+(flowYi[i00+W]*(1-fx)+flowYi[i00+W+1]*fx)*fy;
+      var m=Math.hypot(dx,dy);
+      if(m>1e-9){dv[0]=dx/m;dv[1]=dy/m;}else{dv[0]=d45x;dv[1]=d45y;}
+    }
+    var flowScale=parseFloat($("flowSpacing").value)||1;
+    function sepAt(idx){ /* required line spacing in px, from tone: linear
+       interpolation between the calibrated endpoints — shadow 1.2 w and
+       light 7 w at the 0.42 mm line — driven by linear-light coverage */
+      var cov=darkLin[idx];if(cov>densityCap)cov=densityCap;
+      var mm=(2.94-(2.94-0.5)*cov)*flowScale;
+      return mm/mmPx/density;
+    }
+    var stamp=new Int32Array(N); /* seed-blocking corridor, radius 0.72 x spacing */
+    var stampStop=new Int32Array(N); /* trace-stopping corridor, radius 0.5 x spacing:
+       a running line keeps this much clearance from a finished one, so the
+       pixel-rounded stop test cannot clip a line that was seeded legally
+       just outside the wider seed corridor */
+    function traceHalf(x,y,sgn,ownMap,stepBase){
+      var h=0.25/mmPx;if(h<1)h=1;if(h>2.5)h=2.5; /* ~0.25 mm RK2 steps */
+      var pts=[],px=0,py=0,have=false;
+      var own=ownMap||new Map(); /* cells this line has visited, by step: a
+         streamline in a field with closed loops (rings around a smooth
+         extremum) would otherwise circle until the step cap, inking the
+         same ring over and over — stop when it comes back to a cell from
+         well earlier in the line (the other half shares the map, so a ring
+         is drawn once, not once per half) */
+      var sBase=stepBase||0;
+      for(var s=0;s<600;s++){
+        tensorDir(x,y);
+        var dx=dv[0]*sgn,dy=dv[1]*sgn;
+        if(have&&dx*px+dy*py<0){dx=-dx;dy=-dy;}
+        var mx=x+dx*h*0.5,my=y+dy*h*0.5; /* RK2 midpoint */
+        if(mx<1||my<1||mx>W-2||my>H-2)break;
+        tensorDir(mx,my);
+        var ex=dv[0],ey=dv[1];
+        if(ex*dx+ey*dy<0){ex=-ex;ey=-ey;}
+        var nx=x+ex*h,ny=y+ey*h;
+        if(nx<1||ny<1||nx>W-2||ny>H-2)break;
+        var idx=Math.round(ny)*W+Math.round(nx);
+        if(darkLin[idx]<0.03||isPaper(idx))break;
+        if(stampStop[idx]!==0)break; /* would hug a finished line — stop instead */
+        var okey=Math.floor(nx/2)+":"+Math.floor(ny/2);
+        var oPrev=own.get(okey);
+        if(oPrev!==undefined&&(s+sBase)-oPrev>24&&s>24)break; /* closed loop */
+        if(oPrev===undefined)own.set(okey,s+sBase);
+        pts.push([nx,ny]);x=nx;y=ny;px=ex;py=ey;have=true;
+      }
+      return pts;
+    }
+    /* candidate seeds on a fine grid, tried darkest-first */
+    var minSep=0.5*flowScale/mmPx/density;if(minSep<2)minSep=2;
+    var cell=minSep*0.85,seeds=[];
+    for(var sy=cell*0.5;sy<H-1;sy+=cell)for(var sx=cell*0.5;sx<W-1;sx+=cell){
+      var hs=Math.sin(sx*127.1+sy*311.7)*43758.5453;hs-=Math.floor(hs);
+      var jx=sx+(hs-0.5)*cell*0.5,jy=sy+(hs-0.5)*cell*0.5;
+      seeds.push({x:jx,y:jy,d:darkLin[Math.round(jy)*W+Math.round(jx)]});
+    }
+    seeds.sort(function(a,b){return b.d-a.d;});
+    var lineId=0,drawn=0;
+    for(var si=0;si<seeds.length;si++){
+      var sd=seeds[si];
+      if(sd.d<0.02)break; /* sorted darkest-first: the rest is paper */
+      var sidx=Math.round(sd.y)*W+Math.round(sd.x);
+      if(stamp[sidx]!==0||isPaper(sidx))continue;
+      lineId++;
+      var ownMap=new Map();
+      var bwd=traceHalf(sd.x,sd.y,-1,ownMap,0);bwd.reverse();
+      var fwd=traceHalf(sd.x,sd.y,1,ownMap,100000);
+      var pts=bwd.concat([[sd.x,sd.y]],fwd);
+      if(pathLen(pts)<Math.max(9,2.5/mmPx))continue; /* minimum line 2.5 mm: shorter stubs cost a lift each and read as dashes */
+      var rawPts=pts; /* the corridor below is stamped from the raw trace:
+         RDP would strip the intermediate points and leave the middle of a
+         long straight run unstamped, letting later lines overlap it */
+      pts=smoothFlowLine(rdp(pts,rdpEps)); /* simplify first, then smooth */
+      /* stamp corridors along the finished line; their radii follow the local
+         spacing, so the next line stops about one spacing away, never on top */
+      var lastX=1e9,lastY=1e9;
+      for(var pi=0;pi<rawPts.length;pi++){
+        var p=rawPts[pi];
+        var pxi=Math.min(W-1,Math.max(0,Math.round(p[0]))),pyi=Math.min(H-1,Math.max(0,Math.round(p[1])));
+        var rSep=sepAt(pyi*W+pxi);
+        var rS=rSep*0.72; /* seed corridor: sets the achieved spacing */
+        if(rS<1.2)rS=1.2;if(rS>30)rS=30;
+        var rT=rSep*0.5; /* stop corridor (Jobard-Lefer dtest = 0.5 dsep) */
+        if(rT<1)rT=1;if(rT>30)rT=30;
+        if(pi!==rawPts.length-1&&Math.hypot(p[0]-lastX,p[1]-lastY)<rT*0.5)continue;
+        lastX=p[0];lastY=p[1];
+        var ri=Math.ceil(rS);
+        for(var yy=Math.max(0,pyi-ri);yy<=Math.min(H-1,pyi+ri);yy++)
+          for(var xx=Math.max(0,pxi-ri);xx<=Math.min(W-1,pxi+ri);xx++){
+            var dd=(xx-pxi)*(xx-pxi)+(yy-pyi)*(yy-pyi);
+            if(dd<=rS*rS)stamp[yy*W+xx]=lineId;
+            if(dd<=rT*rT)stampStop[yy*W+xx]=lineId;
+          }
+      }
+      addStroke(pts,null,0.9);
+      if(++drawn>=2600)break;
+    }
+  }
+  /* ---- shading: wave squiggle (rows/columns of sine waves) ----
+     Each row is a true sine whose phase is integrated along the row, so local
+     frequency can vary with darkness without tearing the wave. Amplitude
+     follows darkness^0.75 (midtones still wiggle); frequency tightens up to
+     ~3.2x in black when Frequency/Both is picked. Light areas are skipped
+     outright — a zero-amplitude wave would still ink a straight line.
+     Colour: darkness and RGB are blurred first, so pen changes land on real
+     colour boundaries instead of pixel noise, and each row is split into
+     one stroke per pen run. Alternate rows are drawn in reverse
+     (serpentine) to cut pen-up travel. For plot speed the finished sine is
+     thinned to ~9 points per wave (peaks and troughs always kept): far
+     fewer, longer segments than the fine sampling, so the plotter can run
+     the curves fast instead of crawling point to point. */
+  function wavePass(){
+    var spacingPx=(parseFloat($("waveSpacing").value)||2.2)/mmPx/density;
+    if(spacingPx<2.5)spacingPx=2.5;
+    var ampPx=(parseFloat($("waveAmp").value)||1.2)/mmPx;
+    var lenPx=(parseFloat($("waveLen").value)||6)/mmPx;
+    if(lenPx<4)lenPx=4;
+    var darkS=gaussBlur(dark,W,H,1.8);
+    var Rf=new Float32Array(N),Gf=new Float32Array(N),Bf=new Float32Array(N),i;
+    for(i=0;i<N;i++){Rf[i]=R[i];Gf[i]=G[i];Bf[i]=B[i];}
+    var Rb=gaussBlur(Rf,W,H,2),Gb=gaussBlur(Gf,W,H,2),Bb=gaussBlur(Bf,W,H,2);
+    var horiz=waveOrient==="h";
+    var L=horiz?W:H,Bdim=horiz?H:W;
+    var step=1.1;
+    var ws={cur:null,segs:[]};
+    function flushWave(){if(ws.cur&&ws.cur.pts.length>2)ws.segs.push(ws.cur);ws.cur=null;}
+    var rowIdx=0;
+    for(var base=spacingPx*0.5;base<Bdim-1;base+=spacingPx,rowIdx++){
+      var phase=0;
+      ws.cur=null;ws.segs=[];
+      for(var pos=0;pos<L-1;pos+=step){
+        var sx=horiz?pos:base, sy=horiz?base:pos;
+        var xi=Math.min(W-1,Math.max(0,Math.round(sx))), yi=Math.min(H-1,Math.max(0,Math.round(sy)));
+        var idx=yi*W+xi;
+        var d=darkS[idx];
+        var ampF=(waveDrive==="freq")?1:Math.pow(Math.min(1,Math.max(0,d)),0.75);
+        var freqF=(waveDrive==="amp")?1:(1+2.2*d);
+        phase+=2*Math.PI*step/lenPx*freqF;
+        if(d<0.07||isPaper(idx)){flushWave();continue;}
+        var off=ampPx*ampF*Math.sin(phase);
+        var qx=horiz?sx:base+off, qy=horiz?base+off:sy;
+        if(qx<1||qy<1||qx>W-2||qy>H-2){flushWave();continue;}
+        var pen=nearestPen(Math.round(Rb[idx]),Math.round(Gb[idx]),Math.round(Bb[idx]),colour);
+        if(ws.cur&&ws.cur.pen!==pen){
+          var lp=ws.cur.pts[ws.cur.pts.length-1];
+          flushWave();ws.cur={pts:[lp],pen:pen};
+        }
+        if(!ws.cur)ws.cur={pts:[],pen:pen};
+        ws.cur.pts.push([qx,qy]);
+      }
+      flushWave();
+      var segs=ws.segs;
+      if(rowIdx%2===1){segs.reverse();segs.forEach(function(s){s.pts.reverse();});}
+      var emitStep=Math.max(2.2,Math.min(7,lenPx/9)); /* ~9 points per base wavelength */
+      segs.forEach(function(s){addStroke(thinSine(s.pts,horiz,emitStep),s.pen,0.5);});
+    }
+  }
+  /* ================= Engines ported from Photo to Plot =================
+     These run on a bed-sized analysis grid (262 x 311 cells of 0.45 mm —
+     the same grid Photo to Plot uses) sampled from this photo through the
+     same 118x140 fit as the SVG output, so their geometry is produced in
+     bed millimetres and converted back to image px for the shared SVG
+     builder. Darkness comes from darkNC: Sketch's brightness / contrast /
+     dramatic pipeline without the density cap, which these engines don't
+     use. Implementations follow Photo to Plot's, with its defaults and
+     control ranges. */
+  var PGW=262,PGH=311,PCELL=0.45;
+  var pDarkG=null,pGradG=null,pRgbG=null,pLinG=null,oxm=0,oym=0;
+  function bilinArr(arr,fx,fy){
+    var x0=Math.floor(fx),y0=Math.floor(fy);
+    if(x0<0)x0=0;if(y0<0)y0=0;if(x0>W-2)x0=W-2;if(y0>H-2)y0=H-2;
+    var tx=fx-x0,ty=fy-y0;if(tx<0)tx=0;if(tx>1)tx=1;if(ty<0)ty=0;if(ty>1)ty=1;
+    var i00=y0*W+x0;
+    return (arr[i00]*(1-tx)+arr[i00+1]*tx)*(1-ty)+(arr[i00+W]*(1-tx)+arr[i00+W+1]*tx)*ty;
+  }
+  function buildPortGrids(){
+    oxm=(118-W*mmPx)/2;oym=(140-H*mmPx)/2;
+    pDarkG=new Float32Array(PGW*PGH);pRgbG=new Uint8ClampedArray(PGW*PGH*3);
+    var chans=[R,G,B];
+    for(var gy=0;gy<PGH;gy++)for(var gx=0;gx<PGW;gx++){
+      var gi=gy*PGW+gx;
+      var fx=((gx+0.5)*PCELL-oxm)/mmPx,fy=((gy+0.5)*PCELL-oym)/mmPx;
+      if(fx<0||fy<0||fx>W-1||fy>H-1){pRgbG[gi*3]=255;pRgbG[gi*3+1]=255;pRgbG[gi*3+2]=255;continue;}
+      pDarkG[gi]=bilinArr(darkNC,fx,fy);
+      for(var ch=0;ch<3;ch++){
+        var v=bilinArr(chans[ch],fx,fy)/255;
+        v=(v-0.5)*userContrast+0.5+brightOff;
+        if(v<0)v=0;if(v>1)v=1;
+        pRgbG[gi*3+ch]=Math.round(v*255);
+      }
+    }
+    /* linear-light darkness on the same grid: the TSP / stipple samplers
+       weight points by physical coverage, not sRGB darkness */
+    pLinG=new Float32Array(PGW*PGH);
+    for(var gi2=0;gi2<PGW*PGH;gi2++){var vv=1-pDarkG[gi2];pLinG[gi2]=1-srgbToLin(vv*255);}
+    /* gradient magnitude of the darkness grid — lets the samplers spend
+       points on edges / micro-texture instead of flat areas */
+    pGradG=new Float32Array(PGW*PGH);
+    for(var y2=0;y2<PGH;y2++)for(var x2=0;x2<PGW;x2++){
+      var xm2=x2>0?x2-1:x2,xp2=x2<PGW-1?x2+1:x2,ym2=y2>0?y2-1:y2,yp2=y2<PGH-1?y2+1:y2;
+      var gxv=pDarkG[y2*PGW+xp2]-pDarkG[y2*PGW+xm2];
+      var gyv=pDarkG[yp2*PGW+x2]-pDarkG[ym2*PGW+x2];
+      var m=Math.sqrt(gxv*gxv+gyv*gyv)/0.30;
+      if(m>1)m=1;
+      pGradG[y2*PGW+x2]=Math.sqrt(m);
+    }
+  }
+  function pBilinearGrid(g,x,y){
+    if(!g)return 0;
+    if(x<0)x=0;if(y<0)y=0;if(x>118)x=118;if(y>140)y=140;
+    var fx=x/118*(PGW-1),fy=y/140*(PGH-1);
+    var ix=Math.floor(fx),iy=Math.floor(fy);
+    if(ix>PGW-2)ix=PGW-2;if(iy>PGH-2)iy=PGH-2;
+    var tx=fx-ix,ty=fy-iy;
+    var a=g[iy*PGW+ix],b=g[iy*PGW+ix+1],c=g[(iy+1)*PGW+ix],d=g[(iy+1)*PGW+ix+1];
+    return (a*(1-tx)+b*tx)*(1-ty)+(c*(1-tx)+d*tx)*ty;
+  }
+  function pDarknessAt(x,y){return pBilinearGrid(pDarkG,x,y);}
+  function pDarknessLinAt(x,y){return pBilinearGrid(pLinG,x,y);}
+  function pGradAt(x,y){return pBilinearGrid(pGradG,x,y);}
+  function bilinG(arr,fx,fy){ /* bilinear sample of a PGW x PGH grid array, in cell coords */
+    var x0=Math.floor(fx),y0=Math.floor(fy);
+    if(x0<0)x0=0;if(y0<0)y0=0;if(x0>PGW-2)x0=PGW-2;if(y0>PGH-2)y0=PGH-2;
+    var tx=fx-x0,ty=fy-y0;if(tx<0)tx=0;if(tx>1)tx=1;if(ty<0)ty=0;if(ty>1)ty=1;
+    var i00=y0*PGW+x0;
+    return (arr[i00]*(1-tx)+arr[i00+1]*tx)*(1-ty)+(arr[i00+PGW]*(1-tx)+arr[i00+PGW+1]*tx)*ty;
+  }
+  /* ============ Direction field + coherent edges (research #2) ============
+     Built once per conversion on the 0.45 mm analysis grid, then upsampled
+     to image resolution:
+     - structure tensor of the darkness grid, smoothed coherence-adaptively
+       (small sigma where coherence is high, large where it is low; a single
+       uniform sigma at the Smoothing slider when Adaptive is off) -> the
+       flow direction field, flat areas blended to the 45 deg diagonal;
+     - ETF: two Kang-style iterations over that field (spatial x magnitude x
+       direction weights, sign-flipped tangents) -> the edge-tangent field;
+     - FDoG: a difference-of-Gaussians run across the flow (along the
+       gradient direction, following the field), accumulated along the flow,
+       twice -> fdogImg, the coherent edge response the contour pass traces.
+     Outputs: flowXi/flowYi (unit flow direction per image px), etfAng
+     (edge-tangent angle per image px), fdogImg (edge response 0..1). */
+  var flowXi=null,flowYi=null,etfAng=null,fdogImg=null;
+  function buildField(){
+    var GN=PGW*PGH,i,x,y;
+    /* edge-extended darkness: outside the fitted photo the grid repeats the
+       nearest photo-edge value, so the fit border is not a fake cliff edge
+       for the tensor / FDoG windows that reach across it */
+    var ex0=Math.max(0,Math.ceil(oxm/PCELL-0.5)),ex1=Math.min(PGW-1,Math.floor(((W-1)*mmPx+oxm)/PCELL-0.5));
+    var ey0=Math.max(0,Math.ceil(oym/PCELL-0.5)),ey1=Math.min(PGH-1,Math.floor(((H-1)*mmPx+oym)/PCELL-0.5));
+    var darkX=new Float32Array(GN);
+    for(y=0;y<PGH;y++){
+      var syE=y<ey0?ey0:(y>ey1?ey1:y);
+      for(x=0;x<PGW;x++){
+        var sxE=x<ex0?ex0:(x>ex1?ex1:x);
+        darkX[y*PGW+x]=pDarkG[syE*PGW+sxE];
+      }
+    }
+    var ggx=new Float32Array(GN),ggy=new Float32Array(GN);
+    for(y=0;y<PGH;y++)for(x=0;x<PGW;x++){
+      var xm=x>0?x-1:x,xp=x<PGW-1?x+1:x,ym=y>0?y-1:y,yp=y<PGH-1?y+1:y;
+      ggx[y*PGW+x]=darkX[y*PGW+xp]-darkX[y*PGW+xm];
+      ggy[y*PGW+x]=darkX[yp*PGW+x]-darkX[ym*PGW+x];
+    }
+    var txx=new Float32Array(GN),txy=new Float32Array(GN),tyy=new Float32Array(GN);
+    for(i=0;i<GN;i++){txx[i]=ggx[i]*ggx[i];txy[i]=ggx[i]*ggy[i];tyy[i]=ggy[i]*ggy[i];}
+    var smoothMm=parseFloat($("smooth").value)||2.5;
+    var adaptive=$("adaptiveSmooth").checked;
+    var Txx,Txy,Tyy,cohSrc;
+    if(adaptive){
+      /* smoothness is the midpoint: small ~0.4x, large ~2x (in grid cells) */
+      var sLo=Math.max(0.5,0.4*smoothMm/PCELL),sHi=Math.max(1,2*smoothMm/PCELL);
+      var hx=gaussBlur(txx,PGW,PGH,sHi),hy=gaussBlur(txy,PGW,PGH,sHi),hz=gaussBlur(tyy,PGW,PGH,sHi);
+      var lx=gaussBlur(txx,PGW,PGH,sLo),ly=gaussBlur(txy,PGW,PGH,sLo),lz=gaussBlur(tyy,PGW,PGH,sLo);
+      cohSrc={xx:hx,xy:hy,yy:hz};
+      Txx=new Float32Array(GN);Txy=new Float32Array(GN);Tyy=new Float32Array(GN);
+      for(i=0;i<GN;i++){
+        var a=hx[i]-hz[i],b=2*hy[i],tr=hx[i]+hz[i];
+        var coh=tr>1e-9?Math.sqrt(a*a+b*b)/tr:0;
+        var wgt=Math.min(1,coh*8); /* high coherence -> small sigma, keeps detail */
+        Txx[i]=lx[i]*wgt+hx[i]*(1-wgt);
+        Txy[i]=ly[i]*wgt+hy[i]*(1-wgt);
+        Tyy[i]=lz[i]*wgt+hz[i]*(1-wgt);
+      }
+    }else{
+      var sU=Math.max(0.5,smoothMm/PCELL);
+      Txx=gaussBlur(txx,PGW,PGH,sU);Txy=gaussBlur(txy,PGW,PGH,sU);Tyy=gaussBlur(tyy,PGW,PGH,sU);
+      cohSrc={xx:Txx,xy:Txy,yy:Tyy};
+    }
+    var coh=new Float32Array(GN),magN=new Float32Array(GN);
+    for(i=0;i<GN;i++){
+      var a2=cohSrc.xx[i]-cohSrc.yy[i],b2=2*cohSrc.xy[i],tr2=cohSrc.xx[i]+cohSrc.yy[i];
+      coh[i]=tr2>1e-9?Math.min(1,Math.sqrt(a2*a2+b2*b2)/tr2):0;
+    }
+    /* gradient strength on an ABSOLUTE scale (sqrt of tensor trace, in
+       darkness-per-cell units): percentile normalization would call a
+       uniform ramp "strong gradient everywhere" and a soft cone a
+       full-strength edge — both must stay near zero here */
+    var mx1=gaussBlur(txx,PGW,PGH,1),mz1=gaussBlur(tyy,PGW,PGH,1);
+    var magScale=0.35;
+    for(i=0;i<GN;i++)magN[i]=Math.min(1,Math.sqrt(Math.max(0,mx1[i]+mz1[i]))/magScale);
+    /* flow direction per cell: minor axis of the tensor, flat areas blended
+       toward the 45 deg diagonal in doubled-angle space (never cancels) */
+    var dirX=new Float32Array(GN),dirY=new Float32Array(GN);
+    var flat2=Math.PI/2; /* 2 * 45 deg */
+    for(i=0;i<GN;i++){
+      var th=0.5*Math.atan2(2*Txy[i],Txx[i]-Tyy[i])+Math.PI/2;
+      var phi=2*th;
+      var delta=(flat2-phi+Math.PI)%(2*Math.PI)-Math.PI;
+      var wgtF=Math.min(1,coh[i]*8);
+      th=0.5*(phi+delta*(1-wgtF));
+      dirX[i]=Math.cos(th);dirY[i]=Math.sin(th);
+    }
+    /* ETF: iterative tangent smoothing with spatial, magnitude (tanh) and
+       direction weights — aligns tangents along edges without averaging
+       across them */
+    var etx=Float32Array.from(dirX),ety=Float32Array.from(dirY);
+    var ER=2,wsTab=[];
+    for(var oy=-ER;oy<=ER;oy++)for(var ox=-ER;ox<=ER;ox++)wsTab.push(Math.exp(-(ox*ox+oy*oy)/(2*1.2*1.2)));
+    for(var it=0;it<2;it++){
+      var nxA=new Float32Array(GN),nyA=new Float32Array(GN);
+      for(y=0;y<PGH;y++)for(x=0;x<PGW;x++){
+        var ci=y*PGW+x,cx0=etx[ci],cy0=ety[ci],ax=0,ay=0,ti=0;
+        for(var oy2=-ER;oy2<=ER;oy2++)for(var ox2=-ER;ox2<=ER;ox2++,ti++){
+          var xx=x+ox2,yy=y+oy2;
+          if(xx<0||yy<0||xx>=PGW||yy>=PGH)continue;
+          var ni=yy*PGW+xx;
+          var dot=cx0*etx[ni]+cy0*ety[ni];
+          var wm=0.5+0.5*Math.tanh((magN[ni]-magN[ci])/0.08);
+          var w=wsTab[ti]*wm*Math.abs(dot),sgn=dot<0?-1:1;
+          ax+=w*sgn*etx[ni];ay+=w*sgn*ety[ni];
+        }
+        var mm=Math.hypot(ax,ay);
+        if(mm>1e-9){nxA[ci]=ax/mm;nyA[ci]=ay/mm;}else{nxA[ci]=cx0;nyA[ci]=cy0;}
+      }
+      etx=nxA;ety=nyA;
+    }
+    /* FDoG: DoG across the flow. The sample path follows the gradient
+       direction field (perpendicular to the ETF), so the filter bends with
+       the edge instead of cutting across it. */
+    var sigC=1.0,sigS=1.6; /* in grid cells: 1 cell ~ 0.45 mm ~ w */
+    var dogW=[],tapC=[],tapS=[];
+    for(var k=-6;k<=6;k++){
+      var t=k*0.5;
+      tapC.push(Math.exp(-t*t/(2*sigC*sigC))/sigC);
+      tapS.push(Math.exp(-t*t/(2*sigS*sigS))/sigS);
+    }
+    /* renormalize the wider Gaussian's taps so both halves carry equal
+       total weight over the truncated window: the kernel is then exactly
+       zero-sum (a constant field gives exactly zero) without the response
+       loss a flat DC shift would cause on real edges */
+    var sumC=0,sumS=0;
+    for(var k2=0;k2<13;k2++){sumC+=tapC[k2];sumS+=tapS[k2];}
+    for(var k3=0;k3<13;k3++)dogW.push(tapC[k3]-tapS[k3]*(sumC/sumS));
+    function fdogAt(cx,cy){
+      var sum=dogW[6]*bilinG(darkX,cx,cy);
+      for(var sgnI=0;sgnI<2;sgnI++){
+        var sgn=sgnI===0?1:-1,px=cx,py=cy;
+        for(var st=1;st<=6;st++){
+          var txv=bilinG(etx,px,py),tyv=bilinG(ety,px,py);
+          px+=(-tyv)*0.5*sgn;py+=txv*0.5*sgn;
+          sum+=dogW[6+st*sgn]*bilinG(darkX,px,py);
+        }
+      }
+      return sum;
+    }
+    var dog=new Float32Array(GN);
+    for(y=0;y<PGH;y++)for(x=0;x<PGW;x++)dog[y*PGW+x]=fdogAt(x,y);
+    /* a constant field must give a zero response: remove the median */
+    var sD=Float32Array.from(dog);sD.sort();
+    var medD=sD[Math.floor(GN/2)];
+    for(i=0;i<GN;i++)dog[i]-=medD;
+    /* accumulate the DoG response along the flow (Gaussian window, sigma_m
+       3 cells), twice — this is what joins broken edge fragments into long
+       coherent lines */
+    function accumAlongFlow(src){
+      var out=new Float32Array(GN);
+      for(var yy2=0;yy2<PGH;yy2++)for(var xx2=0;xx2<PGW;xx2++){
+        var ci2=yy2*PGW+xx2,sum=bilinG(src,xx2,yy2),wsum=1;
+        for(var sgnI2=0;sgnI2<2;sgnI2++){
+          var sgn2=sgnI2===0?1:-1,px2=xx2,py2=yy2;
+          for(var st2=1;st2<=6;st2++){
+            var tx2=bilinG(etx,px2,py2),ty2=bilinG(ety,px2,py2);
+            var ddx=tx2*sgn2,ddy=ty2*sgn2;
+            px2+=ddx*0.5;py2+=ddy*0.5;
+            var wgt2=Math.exp(-(st2*0.5)*(st2*0.5)/(2*3*3));
+            sum+=wgt2*bilinG(src,px2,py2);wsum+=wgt2;
+          }
+        }
+        out[ci2]=sum/wsum;
+      }
+      return out;
+    }
+    var fResp=accumAlongFlow(accumAlongFlow(dog));
+    /* absolute response scale: a full-contrast step edge measures ~0.35 in
+       these units, so 0.30 as the reference keeps gentle curvature (a soft
+       cone peaks ~0.12) below the contour threshold instead of normalizing
+       it up to full strength */
+    var fdogG=new Float32Array(GN);
+    for(i=0;i<GN;i++){
+      var v=fResp[i]/0.30;if(v<0)v=0;if(v>1)v=1;
+      v+=0.3*magN[i]; /* step edges register even where the DoG straddles them */
+      fdogG[i]=v>1?1:v;
+    }
+    /* upsample field + edge response to image resolution */
+    flowXi=new Float32Array(N);flowYi=new Float32Array(N);
+    etfAng=new Float32Array(N);fdogImg=new Float32Array(N);
+    for(y=0;y<H;y++)for(x=0;x<W;x++){
+      var fx=((x*mmPx+oxm)/PCELL)-0.5,fy=((y*mmPx+oym)/PCELL)-0.5;
+      var idx=y*W+x;
+      var vx=bilinG(dirX,fx,fy),vy=bilinG(dirY,fx,fy);
+      var m1=Math.hypot(vx,vy);
+      if(m1>1e-9){flowXi[idx]=vx/m1;flowYi[idx]=vy/m1;}else{flowXi[idx]=d45x;flowYi[idx]=d45y;}
+      var ex2=bilinG(etx,fx,fy),ey2=bilinG(ety,fx,fy);
+      etfAng[idx]=Math.atan2(ey2,ex2);
+      fdogImg[idx]=bilinG(fdogG,fx,fy);
+    }
+  }
+  function mmToPx(p){return [(p[0]-oxm)/mmPx,(p[1]-oym)/mmPx];}
+  function pDist(a,b){var dx=a[0]-b[0],dy=a[1]-b[1];return Math.sqrt(dx*dx+dy*dy);}
+  function pChaikin(pts,iters){
+    var p=pts;
+    for(var k=0;k<iters;k++){
+      if(p.length<3)break;
+      var out=[p[0]];
+      for(var i=0;i<p.length-1;i++){
+        var a=p[i],b=p[i+1];
+        out.push([a[0]*0.75+b[0]*0.25,a[1]*0.75+b[1]*0.25]);
+        out.push([a[0]*0.25+b[0]*0.75,a[1]*0.25+b[1]*0.75]);
+      }
+      out.push(p[p.length-1]);
+      p=out;
+    }
+    return p;
+  }
+  /* full 2-opt aimed only at segments longer than thresh — windowed 2-opt
+     cannot reach the sheet-crossing jumps greedy NN leaves between clusters */
+  function pFixLongJumps(tour,thresh,budgetMs){
+    var n=tour.length;
+    if(n<4)return tour;
+    var t0=performance.now(),improved=true;
+    while(improved&&performance.now()-t0<budgetMs){
+      improved=false;
+      for(var i=0;i<n-1;i++){
+        var a=tour[i],b=tour[i+1],dab=pDist(a,b);
+        if(dab<thresh)continue;
+        var bestJ=-1,bestGain=1e-9;
+        for(var j=0;j<n-1;j++){
+          if(j===i||j===i-1)continue;
+          var c=tour[j],d=tour[j+1];
+          var gain=dab+pDist(c,d)-pDist(a,c)-pDist(b,d);
+          if(gain>bestGain){bestGain=gain;bestJ=j;}
+        }
+        if(bestJ>=0){
+          var lo=bestJ>i?i+1:bestJ+1;
+          var hi=bestJ>i?bestJ:i;
+          while(lo<hi){var tmp=tour[lo];tour[lo]=tour[hi];tour[hi]=tmp;lo++;hi--;}
+          improved=true;
+        }
+        if(performance.now()-t0>budgetMs)break;
+      }
+    }
+    return tour;
+  }
+  /* rejection-sample points with probability ∝ darkness^gamma, plus an
+     edge boost: steep-gradient locations accept extra points even where
+     the tone itself is mid/light */
+  function pSamplePoints(count,gamma,edgeBoost,useLin){
+    var pts=[],guard=count*160+4000;
+    while(pts.length<count&&guard-->0){
+      var x=pRng()*118,y=pRng()*140;
+      var d=useLin?pDarknessLinAt(x,y):pDarknessAt(x,y);
+      if(useLin&&d<0.12)d=0; /* dots only where the linear-light tone is real */
+      var w=Math.pow(d,gamma);
+      if(edgeBoost&&pGradG){
+        var g=pGradAt(x,y);
+        w+=edgeBoost*0.55*g*(1-w)*Math.min(1,d*3+0.2);
+        if(w>0.98)w=0.98;
+      }
+      if((d>0.01||w>0.25)&&pRng()<w)pts.push([x,y]);
+    }
+    return pts;
+  }
+  /* Secord weighted-Voronoi stippling, discrete form (StippleGen-style):
+     assign each sample cell of the darkness grid to its nearest point,
+     then move every point to the darkness-weighted centroid of its cell.
+     Assignment runs on a half-resolution grid via a bucket index. */
+  function pRelaxPoints(pts,iters,grid){
+    var DG=grid||pDarkG;
+    var n=pts.length;
+    if(!iters||n<10||!pDarkG)return pts;
+    if(n>30000)iters=Math.min(iters,2);
+    if(n>60000)iters=Math.min(iters,1);
+    var S=6,BW=Math.ceil(118/S),BH=Math.ceil(140/S);
+    var out=pts.map(function(p){return [p[0],p[1]];});
+    for(var it=0;it<iters;it++){
+      var buckets=new Array(BW*BH),bi;
+      for(bi=0;bi<BW*BH;bi++)buckets[bi]=[];
+      function bIdx(x,y){
+        var bx=Math.floor(x/S);if(bx<0)bx=0;if(bx>=BW)bx=BW-1;
+        var by=Math.floor(y/S);if(by<0)by=0;if(by>=BH)by=BH-1;
+        return by*BW+bx;
+      }
+      for(var i=0;i<n;i++)buckets[bIdx(out[i][0],out[i][1])].push(i);
+      var sx=new Float64Array(n),sy=new Float64Array(n),sw=new Float64Array(n);
+      for(var gy=1;gy<PGH;gy+=2)for(var gx=1;gx<PGW;gx+=2){
+        var cx=gx*PCELL,cy=gy*PCELL;
+        var cbx=Math.floor(cx/S),cby=Math.floor(cy/S);
+        var best=-1,bd=Infinity;
+        for(var r=0;r<=3;r++){
+          for(var byy=cby-r;byy<=cby+r;byy++){
+            if(byy<0||byy>=BH)continue;
+            for(var bxx=cbx-r;bxx<=cbx+r;bxx++){
+              if(bxx<0||bxx>=BW)continue;
+              if(Math.max(Math.abs(bxx-cbx),Math.abs(byy-cby))!==r)continue;
+              var arr=buckets[byy*BW+bxx];
+              for(var t=0;t<arr.length;t++){
+                var pi=arr[t],dx=out[pi][0]-cx,dy=out[pi][1]-cy,dd=dx*dx+dy*dy;
+                if(dd<bd){bd=dd;best=pi;}
+              }
+            }
+          }
+          if(best>=0&&r*S*r*S>=bd)break;
+        }
+        if(best<0)continue;
+        var wgt=0.03+DG[gy*PGW+gx];
+        sx[best]+=cx*wgt;sy[best]+=cy*wgt;sw[best]+=wgt;
+      }
+      for(var k=0;k<n;k++){
+        if(sw[k]>0)out[k]=[sx[k]/sw[k],sy[k]/sw[k]];
+      }
+    }
+    return out;
+  }
+  /* Or-opt: relocate runs of 1–3 consecutive tour points to a better slot
+     among nearby tour positions (windowed, budgeted) */
+  function pOrOpt(tour,budgetMs){
+    var n=tour.length;
+    if(n<8)return tour;
+    var t0=performance.now(),WIN=44;
+    for(var segLen=3;segLen>=1;segLen--){
+      var improved=true,guard=0;
+      while(improved&&guard++<6&&performance.now()-t0<budgetMs){
+        improved=false;
+        for(var i=1;i+segLen<n;i++){
+          var a=tour[i-1],b=tour[i+segLen];
+          var s0=tour[i],s1=tour[i+segLen-1];
+          var removeGain=pDist(a,s0)+pDist(s1,b)-pDist(a,b);
+          if(removeGain<=0)continue;
+          var bestJ=-1,bestGain=1e-9,bestRev=false;
+          for(var off=-WIN;off<=WIN;off++){
+            var j=i+segLen+off;
+            if(j<0||j>=n-1)continue;
+            if(j>=i-1&&j<=i+segLen-1)continue;
+            var c=tour[j],d=tour[j+1];
+            var base=pDist(c,d);
+            var g1=removeGain+base-pDist(c,s0)-pDist(s1,d);
+            var g2=removeGain+base-pDist(c,s1)-pDist(s0,d);
+            if(g1>bestGain){bestGain=g1;bestJ=j;bestRev=false;}
+            if(g2>bestGain){bestGain=g2;bestJ=j;bestRev=true;}
+          }
+          if(bestJ>=0){
+            var seg=tour.splice(i,segLen);
+            if(bestRev)seg.reverse();
+            var insertAt=bestJ>=i?bestJ-segLen+1:bestJ+1;
+            if(insertAt<0)insertAt=0;if(insertAt>tour.length)insertAt=tour.length;
+            tour.splice.apply(tour,[insertAt,0].concat(seg));
+            improved=true;
+            if(performance.now()-t0>budgetMs)break;
+          }
+        }
+      }
+      if(performance.now()-t0>budgetMs)break;
+    }
+    return tour;
+  }
+  /* greedy nearest-neighbour tour, accelerated with spatial buckets on a
+     3 mm grid: each step searches expanding bucket rings around the
+     current point, stopping once no unscanned bucket can hold a closer one */
+  function pNnTour(pts){
+    var n=pts.length;
+    if(n<2)return pts.slice();
+    var used=new Uint8Array(n),tour=new Array(n);
+    var S=3;
+    var BW=Math.ceil(118/S),BH=Math.ceil(140/S);
+    var buckets=new Array(BW*BH),counts=new Int32Array(BW*BH),i;
+    for(i=0;i<BW*BH;i++)buckets[i]=[];
+    function bIdx(x,y){
+      var bx=Math.floor(x/S);if(bx<0)bx=0;if(bx>=BW)bx=BW-1;
+      var by=Math.floor(y/S);if(by<0)by=0;if(by>=BH)by=BH-1;
+      return by*BW+bx;
+    }
+    for(i=0;i<n;i++){var bi=bIdx(pts[i][0],pts[i][1]);buckets[bi].push(i);counts[bi]++;}
+    var cur=0;
+    used[0]=1;counts[bIdx(pts[0][0],pts[0][1])]--;tour[0]=pts[0];
+    var maxR=Math.max(BW,BH);
+    for(var k=1;k<n;k++){
+      var cx=pts[cur][0],cy=pts[cur][1];
+      var cbx=Math.floor(cx/S);if(cbx<0)cbx=0;if(cbx>=BW)cbx=BW-1;
+      var cby=Math.floor(cy/S);if(cby<0)cby=0;if(cby>=BH)cby=BH-1;
+      var best=-1,bd=Infinity;
+      for(var r=0;r<=maxR;r++){
+        for(var byy=cby-r;byy<=cby+r;byy++){
+          if(byy<0||byy>=BH)continue;
+          for(var bxx=cbx-r;bxx<=cbx+r;bxx++){
+            if(bxx<0||bxx>=BW)continue;
+            if(Math.max(Math.abs(bxx-cbx),Math.abs(byy-cby))!==r)continue;
+            var b=byy*BW+bxx;
+            if(!counts[b])continue;
+            var arr=buckets[b];
+            if(arr.length>64&&counts[b]*2<arr.length){
+              var live=[];
+              for(var u=0;u<arr.length;u++)if(!used[arr[u]])live.push(arr[u]);
+              arr=buckets[b]=live;
+            }
+            for(var t=0;t<arr.length;t++){
+              var pi=arr[t];
+              if(used[pi])continue;
+              var dx=pts[pi][0]-cx,dy=pts[pi][1]-cy,d=dx*dx+dy*dy;
+              if(d<bd){bd=d;best=pi;}
+            }
+          }
+        }
+        if(best>=0&&r*S*r*S>=bd)break;
+      }
+      cur=best;used[cur]=1;counts[bIdx(pts[cur][0],pts[cur][1])]--;tour[k]=pts[cur];
+    }
+    return tour;
+  }
+  function pTwoOpt(tour,win,budgetMs){
+    var n=tour.length;
+    if(n<4)return tour;
+    var t0=performance.now(),improved=true;
+    while(improved&&performance.now()-t0<budgetMs){
+      improved=false;
+      for(var i=0;i<n-2;i++){
+        var a=tour[i],b=tour[i+1],dab=pDist(a,b);
+        var jmax=Math.min(n-2,i+win);
+        for(var j=i+2;j<=jmax;j++){
+          var c=tour[j],d=tour[j+1];
+          if(pDist(a,c)+pDist(b,d)<dab+pDist(c,d)-1e-9){
+            var lo=i+1,hi=j;
+            while(lo<hi){var tmp=tour[lo];tour[lo]=tour[hi];tour[hi]=tmp;lo++;hi--;}
+            improved=true;
+            b=tour[i+1];dab=pDist(a,b);
+          }
+        }
+        if(performance.now()-t0>budgetMs)break;
+      }
+    }
+    return tour;
+  }
+  /* ---- TSP scribble: one continuous tour through darkness-sampled,
+     Lloyd-relaxed points, cleaned with 2-opt / Or-opt / uncrossing ---- */
+  function portTSP(){
+    buildPortGrids();
+    var pts=pSamplePoints(Math.round(parseFloat($("tspPoints").value)),parseFloat($("tspGamma").value),parseFloat($("tspEdge").value),true);
+    pts=pRelaxPoints(pts,Math.round(parseFloat($("tspRelax").value)),pLinG);
+    if(pts.length<2)return;
+    var tour=pNnTour(pts);
+    tour=pTwoOpt(tour,28,900);
+    tour=pOrOpt(tour,400);
+    tour=pFixLongJumps(tour,14,500);
+    tour=pChaikin(tour,Math.round(parseFloat($("tspSmooth").value)));
+    addStroke(tour.map(mmToPx));
+  }
+  /* ---- Colour TSP: quantise to the eight pens in OKLab, then one TSP
+     scribble per pen. Near-white stays paper; low-chroma greys can only
+     use the black pen. ---- */
+  function portColour(){
+    buildPortGrids();
+    var paperL=parseFloat($("colPaper").value),satGate=parseFloat($("colSat").value),total=Math.round(parseFloat($("colPoints").value));
+    var cand=PENS.map(function(){return {pts:[],wsum:0};});
+    for(var i=0;i<PGW*PGH;i++){
+      var lab=rgbToOklab(pRgbG[i*3],pRgbG[i*3+1],pRgbG[i*3+2]);
+      var L=lab[0];
+      if(L>paperL)continue; /* paper rule */
+      var C=Math.sqrt(lab[1]*lab[1]+lab[2]*lab[2]);
+      var best=0,bd=Infinity,to=PENS.length;
+      if(C<satGate)to=1; /* saturation gate: greys -> black only */
+      for(var p=0;p<to;p++){
+        var dl=lab[0]-PENS[p].lab[0],da=lab[1]-PENS[p].lab[1],db=lab[2]-PENS[p].lab[2];
+        var d2=dl*dl+da*da+db*db;
+        if(d2<bd){bd=d2;best=p;}
+      }
+      var w=Math.pow(1-L,2)*(1+(pGradG?1.3*pGradG[i]:0));
+      var gx=(i%PGW)*PCELL+PCELL/2,gy=Math.floor(i/PGW)*PCELL+PCELL/2;
+      cand[best].pts.push([gx,gy,w]);
+      cand[best].wsum+=w;
+    }
+    var wtotal=0,p2;
+    for(p2=0;p2<PENS.length;p2++)wtotal+=cand[p2].wsum;
+    if(wtotal<=0)return;
+    for(p2=0;p2<PENS.length;p2++){
+      var share=Math.round(total*cand[p2].wsum/wtotal);
+      if(share<4||cand[p2].pts.length<4)continue;
+      var pool=cand[p2].pts,picked=[],guard=share*60+500;
+      while(picked.length<share&&guard-->0){
+        var c=pool[Math.floor(pRng()*pool.length)];
+        if(pRng()<c[2])picked.push([c[0]+(pRng()-0.5)*PCELL,c[1]+(pRng()-0.5)*PCELL]);
+      }
+      if(picked.length<2)continue;
+      var tour=pNnTour(picked);
+      if(picked.length>60){tour=pTwoOpt(tour,20,350);tour=pFixLongJumps(tour,14,200);}
+      if($("colSmooth").checked)tour=pChaikin(tour,1);
+      var ptsPx=tour.map(mmToPx);
+      if(pathLen(ptsPx)>=3)strokes.push({pts:simplify(ptsPx,1.4),pen:PENS[p2]});
+    }
+  }
+  /* ---- Stipple dots: the TSP sampler, each point a small circle ---- */
+  function portStipple(){
+    buildPortGrids();
+    var pts=pSamplePoints(Math.round(parseFloat($("stipPoints").value)),parseFloat($("stipGamma").value),0.8,true);
+    pts=pRelaxPoints(pts,Math.round(parseFloat($("stipRelax").value)),pLinG);
+    var r0=parseFloat($("stipR").value),vary=$("stipVary").checked;
+    for(var i=0;i<pts.length;i++){
+      var d=pDarknessLinAt(pts[i][0],pts[i][1]);
+      var r=vary?r0*(0.45+0.9*d):r0;
+      var px=(pts[i][0]-oxm)/mmPx,py=(pts[i][1]-oym)/mmPx;
+      var xi=Math.min(W-1,Math.max(0,Math.round(px))),yi=Math.min(H-1,Math.max(0,Math.round(py)));
+      var idx=yi*W+xi;
+      strokes.push({circle:[px,py,r/mmPx],pen:nearestPen(R[idx],G[idx],B[idx],colour)});
+    }
+  }
+  /* ---- Spiral halftone: one Archimedean spiral out from the centre,
+     its radius modulated by the local darkness ---- */
+  function portSpiral(){
+    buildPortGrids();
+    var pitch=parseFloat($("spirPitch").value),mod=parseFloat($("spirMod").value),paper=parseFloat($("spirPaper").value);
+    var cx=118/2,cy=140/2,RMAX=96;
+    var paths=[],run=null;
+    function closeRun(){if(run&&pathLen(run)>=2)paths.push(run);run=null;}
+    var theta=0;
+    while(true){
+      var rBase=pitch*theta/(2*Math.PI);
+      if(rBase>RMAX)break;
+      var bx=cx+rBase*Math.cos(theta),by=cy+rBase*Math.sin(theta);
+      var d=(bx>=0&&bx<=118&&by>=0&&by<=140)?pDarknessAt(bx,by):0;
+      var r=rBase+(d-0.45)*pitch*0.9*mod;
+      if(r<0.2)r=0.2;
+      var x=cx+r*Math.cos(theta),y=cy+r*Math.sin(theta);
+      var inside=x>=0&&x<=118&&y>=0&&y<=140;
+      if(inside&&d>=paper){
+        if(run&&pDist(run[run.length-1],[x,y])>3.5)closeRun();
+        if(!run)run=[[x,y]];else run.push([x,y]);
+      }else closeRun();
+      theta+=0.9/Math.max(rBase,3);
+    }
+    closeRun();
+    paths.forEach(function(p){addStroke(p.map(mmToPx));});
+  }
+  /* ---- Dither dots: error diffusion (Floyd–Steinberg / Atkinson) or
+     Bayer ordered dithering on a plottable cell grid ---- */
+  function portDither(){
+    buildPortGrids();
+    var cell=parseFloat($("dithCell").value),dotScale=parseFloat($("dithDot").value),method=$("dithMethod").value;
+    var nx=Math.floor(118/cell),ny=Math.floor(140/cell);
+    var dox=(118-nx*cell)/2,doy=(140-ny*cell)/2;
+    var vals=new Float32Array(nx*ny),ink=new Uint8Array(nx*ny);
+    for(var j=0;j<ny;j++)for(var i=0;i<nx;i++){
+      vals[j*nx+i]=pDarknessAt(dox+(i+0.5)*cell,doy+(j+0.5)*cell);
+    }
+    if(method==="bayer"){
+      var BAYER=[[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+      for(var j2=0;j2<ny;j2++)for(var i2=0;i2<nx;i2++){
+        ink[j2*nx+i2]=vals[j2*nx+i2]>(BAYER[j2%4][i2%4]+0.5)/16?1:0;
+      }
+    }else if(method==="atkinson"){
+      for(var j3=0;j3<ny;j3++)for(var i3=0;i3<nx;i3++){
+        var idx3=j3*nx+i3,v3=vals[idx3];
+        var out3=v3>=0.5?1:0;ink[idx3]=out3;
+        var err3=(v3-out3)/8;
+        [[1,0],[2,0],[-1,1],[0,1],[1,1],[0,2]].forEach(function(o){
+          var xx=i3+o[0],yy=j3+o[1];
+          if(xx>=0&&xx<nx&&yy<ny)vals[yy*nx+xx]+=err3;
+        });
+      }
+    }else{
+      /* Floyd–Steinberg, serpentine scan */
+      for(var j4=0;j4<ny;j4++){
+        var dirS=j4%2===0?1:-1;
+        for(var k4=0;k4<nx;k4++){
+          var i4=dirS>0?k4:nx-1-k4;
+          var idx4=j4*nx+i4,v4=vals[idx4];
+          var out4=v4>=0.5?1:0;ink[idx4]=out4;
+          var err4=v4-out4;
+          function pushErr(ii,jj,f){
+            if(ii>=0&&ii<nx&&jj<ny)vals[jj*nx+ii]+=err4*f;
+          }
+          pushErr(i4+dirS,j4,7/16);
+          pushErr(i4-dirS,j4+1,3/16);
+          pushErr(i4,j4+1,5/16);
+          pushErr(i4+dirS,j4+1,1/16);
+        }
+      }
+    }
+    var r=Math.max(0.35,cell*0.30*dotScale);
+    for(var j5=0;j5<ny;j5++)for(var i5=0;i5<nx;i5++){
+      if(!ink[j5*nx+i5])continue;
+      var px=(dox+(i5+0.5)*cell-oxm)/mmPx,py=(doy+(j5+0.5)*cell-oym)/mmPx;
+      var xi=Math.min(W-1,Math.max(0,Math.round(px))),yi=Math.min(H-1,Math.max(0,Math.round(py)));
+      var idx=yi*W+xi;
+      strokes.push({circle:[px,py,r/mmPx],pen:nearestPen(R[idx],G[idx],B[idx],colour)});
+    }
+  }
+  /* shared direction field + FDoG edge response, built once for the
+     engines that trace along them (flow field and the contour pass) */
+  var rdpEps=Math.min(1.5,Math.max(0.4,0.1/mmPx)); /* RDP tolerance: 0.1 mm, in image px */
+  if(shading==="flowfield"||shading==="flow"||shading==="gradient"||shading==="off"){
+    buildPortGrids();
+    buildField();
+  }
+  if(shading==="gradient")gradientPass(1,5);
+  else if(shading==="flow")flowPass(1);
+  else if(shading==="flowfield")flowFieldPass();
+  else if(shading==="wave")wavePass();
+  else if(shading==="tsp")portTSP();
+  else if(shading==="colour")portColour();
+  else if(shading==="stipple")portStipple();
+  else if(shading==="spiral")portSpiral();
+  else if(shading==="dither")portDither();
+  setProgress(0.7);
+
+  /* Wave squiggle draws no contours — the sine rows carry the image alone.
+     The ported engines are complete drawings too, so they skip contours. */
+  if(shading!=="wave"&&!PORTED[shading]){
+  /* ---- contours: FDoG edges traced along the edge-tangent flow ---- */
+  /* Threshold with real bite across the whole slider: detail 0 keeps only the
+     strongest edges in the photo, detail 1 keeps faint texture too. */
+  var thrEdge=0.92-detail*0.74; /* FDoG response 0..1 -> detail 0: 0.92, detail 1: 0.18 */
+  /* No new contour may start within suppR px of an accepted one. Without this,
+     every wide edge spawned several near-parallel traces a pixel or two apart,
+     which read as one thick, dense stroke no slider could thin out. Low detail
+     spaces lines further apart; high detail lets them pack closer. */
+  var suppR=Math.max(1,Math.round(4.6-detail*3.1)); /* detail 0..1 -> 5..2 px (rounded) */
+  var minContourLen=36-detail*26; /* low detail also drops short fragments: 36..10 px */
+  var seen=new Uint8Array(N);
+  var contourStrokes=[]; /* held back for the de-overlap pass below */
+  for(y=2;y<H-2;y++)for(x=2;x<W-2;x++){
+    var a2=y*W+x;
+    if(fdogImg[a2]<thrEdge||seen[a2])continue;
+    /* local ridge check: stronger than neighbours across gradient */
+    var gxm=gx[a2],gym=gy[a2],gm=Math.hypot(gxm,gym)||1;gxm/=gm;gym/=gm;
+    var p1=fdogImg[Math.round(y+gym)*W+Math.round(x+gxm)],p2=fdogImg[Math.round(y-gym)*W+Math.round(x-gxm)];
+    if(fdogImg[a2]<p1||fdogImg[a2]<p2)continue;
+    var pts2=traceLine(etfAng,W,H,x,y,1.8,220,fdogImg,thrEdge*0.72);
+    if(pathLen(pts2)<minContourLen)continue;
+    /* stamp a disc of "seen" along the whole path, not just the traced pixels:
+       neighbouring ridge pixels off the exact trace line are suppressed too */
+    pts2.forEach(function(p){
+      var cx2=Math.round(p[0]),cy2=Math.round(p[1]);
+      for(var yy=Math.max(0,cy2-suppR);yy<=Math.min(H-1,cy2+suppR);yy++)
+        for(var xx=Math.max(0,cx2-suppR);xx<=Math.min(W-1,cx2+suppR);xx++)
+          if((xx-cx2)*(xx-cx2)+(yy-cy2)*(yy-cy2)<=suppR*suppR)seen[yy*W+xx]=1;
+    });
+    /* contours default to black unless the local colour is strongly chromatic */
+    var mid2=pts2[Math.floor(pts2.length/2)];
+    var mi=Math.min(H-1,Math.max(0,Math.round(mid2[1])))*W+Math.min(W-1,Math.max(0,Math.round(mid2[0])));
+    var mxc=Math.max(R[mi],G[mi],B[mi]),mnc=Math.min(R[mi],G[mi],B[mi]);
+    var penC=(colour&&(mxc-mnc)>70)?nearestPen(R[mi],G[mi],B[mi],true):PENS[0];
+    contourStrokes.push({pts:rdp(pts2,rdpEps),pen:penC,contour:true});
+  }
+
+  /* ---- contour de-overlap: longest lines win ----
+     Independent of the Detail slider: even when plenty of contours survive,
+     a line that mostly runs within one pen-width (~1.5 mm at plot scale) of a
+     longer, already-kept line is the same real edge traced twice — the plotter
+     would just ink over itself. Drop it. Lines are judged longest-first, and
+     each kept line stamps a pen-width corridor no later line may mostly hug. */
+  var scFit=Math.min((118-2*5)/W,(140-2*5)/H); /* mm per image px, same fit as the SVG build below */
+  var rPx=Math.max(2,1.5/scFit); /* 1.5 mm in image px */
+  var corridor=new Uint8Array(N);
+  var byLength=contourStrokes.map(function(s){return {s:s,L:pathLen(s.pts),keep:false};});
+  byLength.sort(function(a,b){return b.L-a.L;});
+  byLength.forEach(function(e){
+    var pts=e.s.pts,inside=0,total=0,i;
+    /* judge and stamp along the SEGMENTS, sampled every ~rPx/2: contour
+       polylines are RDP-simplified, so a long straight run may hold only
+       its two endpoints — sampling the points alone would leave the middle
+       of the run outside the corridor and let a duplicate survive */
+    function segSamples(fn){
+      for(var j=0;j<pts.length;j++){
+        var pax=pts[j][0],pay=pts[j][1];
+        var pbx=(j+1<pts.length)?pts[j+1][0]:pax,pby=(j+1<pts.length)?pts[j+1][1]:pay;
+        var sl=Math.hypot(pbx-pax,pby-pay),steps=Math.max(1,Math.ceil(sl/(rPx*0.5)));
+        for(var stp=(j===0?0:1);stp<=steps;stp++)fn(pax+(pbx-pax)*stp/steps,pay+(pby-pay)*stp/steps);
+      }
+    }
+    segSamples(function(sxp,syp){
+      var xi=Math.min(W-1,Math.max(0,Math.round(sxp))),yi=Math.min(H-1,Math.max(0,Math.round(syp)));
+      total++;if(corridor[yi*W+xi])inside++;
+    });
+    if(total&&inside/total>=0.7)return; /* mostly retraces a kept line */
+    e.keep=true; e.s._keep=true;
+    segSamples(function(sxp,syp){
+      var cx3=Math.round(sxp),cy3=Math.round(syp);
+      for(var yy=Math.max(0,cy3-Math.ceil(rPx));yy<=Math.min(H-1,cy3+Math.ceil(rPx));yy++)
+        for(var xx=Math.max(0,cx3-Math.ceil(rPx));xx<=Math.min(W-1,cx3+Math.ceil(rPx));xx++)
+          if((xx-cx3)*(xx-cx3)+(yy-cy3)*(yy-cy3)<=rPx*rPx)corridor[yy*W+xx]=1;
+    });
+  });
+  contourStrokes.forEach(function(s){if(s._keep){delete s._keep;strokes.push(s);}});
+  }
+  setProgress(0.9);
+
+  /* ---- build SVG fitted to bed 118x140mm ---- */
+  var BEDW=118,BEDH=140,MARG=5;
+  var sc=Math.min((BEDW-MARG*2)/W,(BEDH-MARG*2)/H);
+  var ox=(BEDW-W*sc)/2,oy=(BEDH-H*sc)/2;
+  var byTool={};strokes.forEach(function(s){(byTool[s.pen.t]=byTool[s.pen.t]||[]).push(s);});
+  /* per-pen output ordering: first join paths whose endpoints nearly touch
+     (0.15 mm — a join shorter than the line width, so it draws nothing
+     visible and saves a lift), then nearest-neighbour order with reversal.
+     Dot groups are ordered by a bucket NN tour over their centres. Drawing
+     order within a pen never changes what is drawn, only how far the pen
+     travels lifted and how often it lifts. */
+  function orderGroup(list){
+    var paths=[],circles=[],i;
+    for(i=0;i<list.length;i++){if(list[i].circle)circles.push(list[i]);else paths.push(list[i]);}
+    var out=[];
+    if(paths.length){paths=mergeStrokes(paths,0.15/sc);out=out.concat(orderNN(paths));}
+    if(circles.length>1){
+      var cpts=circles.map(function(s){var p=[ox+s.circle[0]*sc,oy+s.circle[1]*sc];p._s=s;return p;});
+      circles=pNnTour(cpts).map(function(p){return p._s;});
+    }
+    return out.concat(circles);
+  }
+  var totalMm=0,pathCount=0,parts=[];
+  Object.keys(byTool).sort().forEach(function(t){
+    var pen=PENS.filter(function(p){return p.t===t;})[0];
+    parts.push('<g id="'+t+'" data-tool="'+t+'" data-pen="'+pen.name+'" stroke="'+pen.hex+'" fill="none" stroke-linecap="round" stroke-linejoin="round">');
+    var group=orderGroup(byTool[t]);
+    group.forEach(function(s){
+      pathCount++;
+      if(s.circle){ /* stipple / dither dot, stored in image px as [cx, cy, r] */
+        var ccx=ox+s.circle[0]*sc, ccy=oy+s.circle[1]*sc, ccr=s.circle[2]*sc;
+        totalMm+=2*Math.PI*ccr;
+        parts.push('<circle cx="'+ccx.toFixed(2)+'" cy="'+ccy.toFixed(2)+'" r="'+ccr.toFixed(2)+'" stroke-width="'+LINE_W+'"/>');
+        return;
+      }
+      var d="",mm=0;
+      s.pts.forEach(function(p,j){
+        var X=(ox+p[0]*sc),Y=(oy+p[1]*sc);
+        d+=(j===0?"M":"L")+X.toFixed(2)+" "+Y.toFixed(2);
+        if(j>0)mm+=Math.hypot((p[0]-s.pts[j-1][0])*sc,(p[1]-s.pts[j-1][1])*sc);
+      });
+      totalMm+=mm;
+      parts.push('<path d="'+d+'" stroke-width="'+LINE_W+'"/>');
+    });
+    parts.push("</g>");
+  });
+  var svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+BEDW+'mm" height="'+BEDH+'mm" viewBox="0 0 '+BEDW+' '+BEDH+'" role="img" aria-label="Plotter sketch of your photo">'
+    +'<rect width="'+BEDW+'" height="'+BEDH+'" fill="white"/>'
+    +parts.join("")+"</svg>";
+  state.svg=svg;state.paths=pathCount;
+  $("svgHost").innerHTML=svg;
+  var svgEl=$("svgHost").querySelector("svg");if(svgEl){svgEl.removeAttribute("width");svgEl.removeAttribute("height");}
+  /* re-add paper bg removal for preview: keep white rect (paper) */
+  $("stPaths").textContent=pathCount.toLocaleString();
+  $("stInk").textContent=totalMm>=1000?(totalMm/1000).toFixed(1)+" m":Math.round(totalMm)+" mm";
+  $("stTools").textContent=Object.keys(byTool).length+" / 8";
+  $("stSize").textContent=Math.max(1,Math.round(new Blob([svg]).size/1024))+" KB";
+  $("downloadBtn").disabled=false;$("copyBtn").disabled=false;
+  setView("sketch");
+  setProgress(null);
+  setStatus("Done — "+pathCount.toLocaleString()+" paths, "+(totalMm/1000).toFixed(1)+" m of ink.");
+}
+
+/* ============ Download / copy ============ */
+$("downloadBtn").addEventListener("click",function(){
+  if(!state.svg)return;
+  var blob=new Blob([state.svg],{type:"image/svg+xml"});
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  var base=(state.fileName||"photo").replace(/\.[^.]+$/,"");
+  a.download=base+"-sketch-"+shading+"-d"+$("density").value+".svg";
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(a.href);},4000);
+});
+$("copyBtn").addEventListener("click",function(){
+  if(!state.svg)return;
+  function done(){$("copyMsg").textContent="Copied.";}
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(state.svg).then(done,function(){$("copyMsg").textContent="Copy blocked — use Download.";});}
+  else{$("copyMsg").textContent="Copy unavailable — use Download.";}
+});
+syncDensity();
+syncFlowSpacing();
+</script>
+</body>
+</html>
