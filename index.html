@@ -283,6 +283,12 @@
         <div class="field">
           <label for="stripeLen">Wavelength <output id="stripeLenOut">1.5 mm</output></label>
           <input type="range" id="stripeLen" min="0.8" max="4" step="0.1" value="1.5" aria-label="Stripe wavelength, 0.8 to 4 millimetres" />
+          <label for="stripeMod">Modulation</label>
+          <select id="stripeMod">
+            <option value="both" selected>Amplitude + frequency</option>
+            <option value="am">Amplitude only</option>
+            <option value="fm">Frequency only</option>
+          </select>
           <p class="hint">Base length in light areas; dark areas tighten it.</p>
         </div>
         <p class="hint">Stripes cycle cyan, magenta, yellow, black down the bed; each stripe&rsquo;s wiggle follows its own ink channel (amplitude + frequency). Yellow uses the lime pen &mdash; the set has no yellow.</p>
@@ -1316,8 +1322,9 @@ function runConvert(){
        so every stripe is one continuous sine from top to bottom. The step
        adapts so every sine cycle gets at least 8 samples, or the wave
        aliases into noise instead of a clean sine. */
-    var ampFloor=0.15, freqFloor=0.25;
+    var ampFloor=0.15, freqFloor=0.25, freqMax=8; /* darkest areas run at 8x the base frequency, so the min wavelength is Wavelength/8 */
     var maxPhaseStep=Math.PI/4;
+    var mod=($("stripeMod")&&$("stripeMod").value)||"both"; /* both = AM+FM, am = amplitude only, fm = frequency only */
     var ws={cur:null,segs:[]};
     function flushStripe(){if(ws.cur&&ws.cur.pts.length>2)ws.segs.push(ws.cur);ws.cur=null;}
     var stripeIdx=0;
@@ -1332,9 +1339,11 @@ function runConvert(){
         var yi=Math.min(H-1,Math.max(0,Math.round(pos)));
         var xi=Math.min(W-1,Math.max(0,Math.round(base)));
         var idx=yi*W+xi;
-        var d=cdark[idx];
-        var ampF=ampFloor+(1-ampFloor)*Math.pow(Math.min(1,Math.max(0,d)),0.75);
-        var freqF=freqFloor+(1-freqFloor)*Math.min(1,Math.max(0,d));
+        var d=Math.min(1,Math.max(0,cdark[idx]));
+        var ampF, freqF;
+        if(mod==="am"){ampF=ampFloor+(1-ampFloor)*Math.pow(d,0.75);freqF=freqMax;}
+        else if(mod==="fm"){ampF=1;freqF=freqFloor+(freqMax-freqFloor)*d;}
+        else{ampF=ampFloor+(1-ampFloor)*Math.pow(d,0.75);freqF=freqFloor+(freqMax-freqFloor)*d;}
         var omega=2*Math.PI*freqF/lenPx; /* rad per image px */
         var off=ampPx*ampF*Math.sin(phase);
         var qx=base+off, qy=pos;
