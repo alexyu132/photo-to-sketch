@@ -271,8 +271,8 @@
 
       <div class="enginePanel" id="panel-cmykstripes" style="display:none">
         <div class="field">
-          <label for="stripeSpacing">Stripe spacing <output id="stripeSpacingOut">1.6 mm</output></label>
-          <input type="range" id="stripeSpacing" min="0.8" max="4" step="0.1" value="1.6" aria-label="RGB stripe spacing, 0.8 to 4 millimetres" />
+          <label for="stripeSpacing">Stripe spacing <output id="stripeSpacingOut">0.4 mm</output></label>
+          <input type="range" id="stripeSpacing" min="0.2" max="4" step="0.1" value="0.4" aria-label="CMYK stripe spacing, 0.2 to 4 millimetres" />
           <p class="hint">Lower = denser, slower. Stacks with Density.</p>
         </div>
         <div class="field">
@@ -1296,8 +1296,8 @@ function runConvert(){
      for cyan, pink for magenta, lime for yellow (no yellow pen exists),
      black for black. The stripes carry the image alone, like Wave. */
   function cmykStripePass(){
-    var spacingPx=(parseFloat($("stripeSpacing").value)||1.6)/mmPx/density;
-    if(spacingPx<2.5)spacingPx=2.5;
+    var spacingPx=(parseFloat($("stripeSpacing").value)||0.4)/mmPx/density;
+    if(spacingPx<1)spacingPx=1;
     var ampPx=(parseFloat($("stripeAmp").value)||0.4)/mmPx;
     var lenPx=(parseFloat($("stripeLen").value)||1.5)/mmPx;
     if(lenPx<4)lenPx=4;
@@ -1311,7 +1311,13 @@ function runConvert(){
       chanDark[0][i]=cd;chanDark[1][i]=md;chanDark[2][i]=yd;chanDark[3][i]=Math.min(cd,md,yd);
     }
     var stripePens=[PENS[3],PENS[2],PENS[4],PENS[0]]; /* T3 sky=cyan, T2 pink=magenta, T4 lime=yellow, T0 black */
-    var step=1.1;
+    /* selfie-squiggle rule: the wave never stops — white areas get a low,
+       slow baseline wave (15% amplitude, 25% frequency) instead of a gap,
+       so every stripe is one continuous sine from top to bottom. The step
+       adapts so every sine cycle gets at least 8 samples, or the wave
+       aliases into noise instead of a clean sine. */
+    var ampFloor=0.15, freqFloor=0.25;
+    var maxPhaseStep=Math.PI/4;
     var ws={cur:null,segs:[]};
     function flushStripe(){if(ws.cur&&ws.cur.pts.length>2)ws.segs.push(ws.cur);ws.cur=null;}
     var stripeIdx=0;
@@ -1321,24 +1327,31 @@ function runConvert(){
       var ch=stripeIdx%4;
       var pen=stripePens[ch];
       var cdark=chanDark[ch];
-      for(var pos=0;pos<H-1;pos+=step){
-        var xi=Math.min(W-1,Math.max(0,Math.round(base))), yi=Math.min(H-1,Math.max(0,Math.round(pos)));
+      var pos=0;
+      while(true){
+        var yi=Math.min(H-1,Math.max(0,Math.round(pos)));
+        var xi=Math.min(W-1,Math.max(0,Math.round(base)));
         var idx=yi*W+xi;
         var d=cdark[idx];
-        var ampF=Math.pow(Math.min(1,Math.max(0,d)),0.75);
-        var freqF=1+2.2*d;
-        phase+=2*Math.PI*step/lenPx*freqF;
-        if(d<0.07||isPaper(idx)){flushStripe();continue;}
+        var ampF=ampFloor+(1-ampFloor)*Math.pow(Math.min(1,Math.max(0,d)),0.75);
+        var freqF=freqFloor+(1-freqFloor)*Math.min(1,Math.max(0,d));
+        var omega=2*Math.PI*freqF/lenPx; /* rad per image px */
         var off=ampPx*ampF*Math.sin(phase);
         var qx=base+off, qy=pos;
-        if(qx<1||qy<1||qx>W-2||qy>H-2){flushStripe();continue;}
-        if(!ws.cur)ws.cur={pts:[],pen:pen};
-        ws.cur.pts.push([qx,qy]);
+        if(qx<1||qy<1||qx>W-2||qy>H-2){flushStripe();}
+        else{
+          if(!ws.cur)ws.cur={pts:[],pen:pen};
+          ws.cur.pts.push([qx,qy]);
+        }
+        if(pos>=H-1)break;
+        var step=omega>0?Math.min(3,Math.max(0.25,maxPhaseStep/omega)):3;
+        pos=Math.min(pos+step,H-1);
+        phase+=omega*step;
       }
       flushStripe();
       var segs=ws.segs;
       if(stripeIdx%2===1){segs.reverse();segs.forEach(function(s){s.pts.reverse();});}
-      var emitStep=Math.max(2.2,Math.min(7,lenPx/9)); /* ~9 points per base wavelength */
+      var emitStep=Math.max(1.2,Math.min(4,lenPx/12)); /* dense enough to keep the sine smooth */
       segs.forEach(function(s){addStroke(thinSine(s.pts,false,emitStep),s.pen,0.5);});
     }
   }
