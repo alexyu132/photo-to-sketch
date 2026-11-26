@@ -121,6 +121,10 @@
   .thumbrow .meta b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
   .thumbrow .meta span{display:block;font-size:11px;color:var(--dim);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .thumbrow button{flex:0 0 auto;border:1px solid var(--border);background:var(--surface);border-radius:0;padding:0 12px;font-weight:800;font-size:11px;letter-spacing:.035em;text-transform:uppercase;min-height:38px;white-space:nowrap}
+  .rotrow{display:none;gap:8px;align-items:center;margin-top:8px}
+  .rotrow.show{display:flex}
+  .rotrow button{border:1px solid var(--border);background:var(--surface);border-radius:0;padding:0 12px;font-weight:800;font-size:11px;letter-spacing:.035em;text-transform:uppercase;min-height:38px;white-space:nowrap;cursor:pointer}
+  .rotrow .rot-out{font-size:12px;color:var(--dim);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   /* preview */
   .preview{overflow:hidden;min-width:0;max-width:100%}
   .preview-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--hairline)}
@@ -180,6 +184,11 @@
           <img id="thumb" alt="Your uploaded photo, thumbnail" />
           <div class="meta"><b id="fname">photo.jpg</b><span id="fmeta">—</span></div>
           <button type="button" id="replaceBtn">Replace</button>
+        </div>
+        <div class="rotrow" id="rotrow">
+          <button type="button" id="rotLeft" title="Rotate 90° counter-clockwise">⟲ 90°</button>
+          <button type="button" id="rotRight" title="Rotate 90° clockwise">⟳ 90°</button>
+          <span class="rot-out" id="rotOut">0°</span>
         </div>
       </div>
 
@@ -592,7 +601,7 @@ document.getElementById("penrow").innerHTML=PENS.map(function(p){
 
 /* ============ State / elements ============ */
 var $=function(id){return document.getElementById(id);};
-var state={img:null,imgURL:null,fileName:"",svg:"",paths:0,view:"sketch",busy:false};
+var state={img:null,imgURL:null,fileName:"",svg:"",paths:0,view:"sketch",busy:false,rotation:0};
 var shading="flowfield";
 var hatchAngle=0,strokeLen=1; /* engine-specific slider state (Gradient angle, Flow stroke length) */
 var waveOrient="h",waveDrive="both"; /* Wave squiggle state */
@@ -742,6 +751,20 @@ drop.addEventListener("dragleave",function(){drop.classList.remove("drag");});
 drop.addEventListener("drop",function(e){e.preventDefault();drop.classList.remove("drag");if(e.dataTransfer.files&&e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0]);});
 fileInput.addEventListener("change",function(){if(fileInput.files[0])loadFile(fileInput.files[0]);});
 $("replaceBtn").addEventListener("click",function(){fileInput.click();});
+/* rotation: 90° steps, per-photo, applied when the image is read in —
+   every engine and the Original tab see the rotated image */
+function syncRotation(){
+  var r=((state.rotation||0)%360+360)%360;state.rotation=r;
+  $("rotOut").textContent=r+"°";
+}
+function rotateBy(deg){
+  state.rotation=((state.rotation||0)+deg)%360;
+  if(state.rotation<0)state.rotation+=360;
+  syncRotation();
+  if(state.img&&!state.busy)convert();
+}
+$("rotLeft").addEventListener("click",function(){rotateBy(-90);});
+$("rotRight").addEventListener("click",function(){rotateBy(90);});
 function loadFile(f){
   if(!/^image\//.test(f.type)){setStatus("That file isn't an image — pick a JPG, PNG or WebP.");return;}
   var url=URL.createObjectURL(f);
@@ -754,6 +777,8 @@ function loadFile(f){
     $("fname").title=f.name;
     $("fmeta").textContent=img.naturalWidth+" × "+img.naturalHeight+" · "+Math.max(1,Math.round(f.size/1024))+" KB";
     $("thumbrow").classList.add("show");
+    state.rotation=0;syncRotation(); /* rotation is per-photo: a new upload starts unrotated */
+    $("rotrow").classList.add("show");
     syncWaveCount(); /* fitted size is known now, so the count is exact */
     setStatus("Photo loaded. Converting…");
     convert();
@@ -981,12 +1006,25 @@ function convert(){
 }
 function runConvert(){
   var img=state.img;
-  var MAXW=680,scale=Math.min(1,MAXW/img.naturalWidth);
-  var W=Math.max(80,Math.round(img.naturalWidth*scale)),H=Math.max(80,Math.round(img.naturalHeight*scale));
+  var MAXW=680;
+  /* rotation: 90/270° swap the canvas, and the image is drawn rotated
+     into it, so every engine downstream reads the rotated pixels */
+  var rot=((state.rotation||0)%360+360)%360;
+  var swap=(rot===90||rot===270);
+  var natW=swap?img.naturalHeight:img.naturalWidth;
+  var natH=swap?img.naturalWidth:img.naturalHeight;
+  var scale=Math.min(1,MAXW/natW);
+  var W=Math.max(80,Math.round(natW*scale)),H=Math.max(80,Math.round(natH*scale));
   var mmPx=Math.min((118-2*5)/W,(140-2*5)/H); /* mm per image px at plot scale */
   var cv=$("work");cv.width=W;cv.height=H;
   var ctx=cv.getContext("2d",{willReadFrequently:true});
-  ctx.drawImage(img,0,0,W,H);
+  var W0=Math.round(img.naturalWidth*scale),H0=Math.round(img.naturalHeight*scale);
+  ctx.save();
+  if(rot===90){ctx.translate(W,0);ctx.rotate(Math.PI/2);}
+  else if(rot===180){ctx.translate(W,H);ctx.rotate(Math.PI);}
+  else if(rot===270){ctx.translate(0,H);ctx.rotate(-Math.PI/2);}
+  ctx.drawImage(img,0,0,W0,H0);
+  ctx.restore();
   var data=ctx.getImageData(0,0,W,H).data;
   var N=W*H,i,x,y;
   var lum=new Float32Array(N),R=new Uint8Array(N),G=new Uint8Array(N),B=new Uint8Array(N);
@@ -1180,9 +1218,13 @@ function runConvert(){
     var flowScale=parseFloat($("flowSpacing").value)||1;
     function sepAt(idx){ /* required line spacing in px, from tone: linear
        interpolation between the calibrated endpoints — shadow 1.2 w and
-       light 7 w at the 0.42 mm line — driven by linear-light coverage */
+       light 7 w at the 0.42 mm line — driven by linear-light coverage.
+       The coverage is square-rooted, so dark areas tighten faster than a
+       straight line would give: a window that reads as black gets close
+       to solid instead of a grey hatch, while the endpoints (and light
+       areas) are unchanged. */
       var cov=darkLin[idx];if(cov>densityCap)cov=densityCap;
-      var mm=(2.94-(2.94-0.5)*cov)*flowScale;
+      var mm=(2.94-(2.94-0.5)*Math.sqrt(cov))*flowScale;
       return mm/mmPx/density;
     }
     var stamp=new Int32Array(N); /* seed-blocking corridor, radius 0.72 x spacing */
