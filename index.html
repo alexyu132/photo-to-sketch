@@ -1357,12 +1357,21 @@ function runConvert(){
        Gray component replacement: the neutral part (K) is taken out of
        C/M/Y, so a grey area is carried by the black stripe alone instead
        of all four stripes at once — otherwise every muted area prints
-       full cyan + magenta + yellow + black and reads as muddy monochrome. */
+       full cyan + magenta + yellow + black and reads as muddy monochrome.
+       The yellow pen is lime, which reads green and overpowers the muted
+       pink, so reds wash out to green. Compensate where yellow is also
+       present (red/orange areas): strengthen magenta and pull the lime
+       back, so pink dominates the mix. Pure yellows (no magenta) and
+       blues (no yellow) are untouched, and neutrals are unchanged. */
     var chanDark=[new Float32Array(N),new Float32Array(N),new Float32Array(N),new Float32Array(N)];
     for(i=0;i<N;i++){
       var cd=1-srgbToLin(Rb[i]),md=1-srgbToLin(Gb[i]),yd=1-srgbToLin(Bb[i]);
       var k=Math.min(cd,md,yd);
-      chanDark[0][i]=cd-k;chanDark[1][i]=md-k;chanDark[2][i]=yd-k;chanDark[3][i]=k;
+      var c2=cd-k,m2=md-k,y2=yd-k;
+      chanDark[0][i]=c2;
+      chanDark[1][i]=Math.min(1,m2*(1+0.8*y2));
+      chanDark[2][i]=y2*(1-0.6*m2);
+      chanDark[3][i]=k;
     }
     var stripePens=[PENS[3],PENS[2],PENS[4],PENS[0]]; /* T3 sky=cyan, T2 pink=magenta, T4 lime=yellow, T0 black */
     /* selfie-squiggle rule: the wave never stops unless Gaps in near-white
