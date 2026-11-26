@@ -290,6 +290,10 @@
             <option value="fm">Frequency only</option>
           </select>
           <p class="hint">Base length in light areas; dark areas tighten it.</p>
+          <label class="check">
+            <input type="checkbox" id="stripeGaps" />
+            Gaps in near-white
+          </label>
         </div>
         <p class="hint">Stripes cycle cyan, magenta, yellow, black down the bed; each stripe&rsquo;s wiggle follows its own ink channel (amplitude + frequency). Yellow uses the lime pen &mdash; the set has no yellow.</p>
       </div>
@@ -948,7 +952,7 @@ function mergeStrokes(list,tol){
 
 /* ============ Convert (automatic: on upload and on any control change) ============ */
 ["shadingSeg","waveOrientSeg","waveDriveSeg"].forEach(function(id){$(id).addEventListener("click",function(){if(state.img&&!state.busy)setTimeout(convert,30);});});
-["density","detail","dramatic","densityCap","brightness","contrast","flowSpacing","smooth","strokeLen","hatchAngle","waveSpacing","waveAmp","waveLen","waveCount","stripeSpacing","stripeAmp","stripeLen","tspPoints","tspGamma","tspEdge","tspRelax","tspSmooth","colPoints","colPaper","colSat","stipRelax","stipPoints","stipGamma","stipR","spirPitch","spirMod","spirPaper","dithCell","dithDot"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
+["density","detail","dramatic","densityCap","brightness","contrast","flowSpacing","smooth","strokeLen","hatchAngle","waveSpacing","waveAmp","waveLen","waveCount","stripeSpacing","stripeAmp","stripeLen","stripeMod","stripeGaps","tspPoints","tspGamma","tspEdge","tspRelax","tspSmooth","colPoints","colPaper","colSat","stipRelax","stipPoints","stipGamma","stipR","spirPitch","spirMod","spirPaper","dithCell","dithDot"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
 ["fillWhite","colour","stipVary","colSmooth","adaptiveSmooth"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
 
 function convert(){
@@ -1297,7 +1301,10 @@ function runConvert(){
      ink channel at that point: cyan follows how much red is missing,
      magenta how much green is missing, yellow how much blue is missing,
      black the common darkness. Dark areas swing further and tighter,
-     light areas run nearly straight; a white area draws nothing at all.
+     light areas run nearly straight; a white area gets a low, slow
+     baseline wave so the stripe stays continuous — unless Gaps in
+     near-white is on, in which case a stripe lifts wherever its own
+     channel is truly close to white, leaving bare paper for contrast.
      Pens are the closest the BIC set has to each separation: sky blue
      for cyan, pink for magenta, lime for yellow (no yellow pen exists),
      black for black. The stripes carry the image alone, like Wave. */
@@ -1317,14 +1324,16 @@ function runConvert(){
       chanDark[0][i]=cd;chanDark[1][i]=md;chanDark[2][i]=yd;chanDark[3][i]=Math.min(cd,md,yd);
     }
     var stripePens=[PENS[3],PENS[2],PENS[4],PENS[0]]; /* T3 sky=cyan, T2 pink=magenta, T4 lime=yellow, T0 black */
-    /* selfie-squiggle rule: the wave never stops — white areas get a low,
-       slow baseline wave (15% amplitude, 25% frequency) instead of a gap,
-       so every stripe is one continuous sine from top to bottom. The step
-       adapts so every sine cycle gets at least 8 samples, or the wave
-       aliases into noise instead of a clean sine. */
+    /* selfie-squiggle rule: the wave never stops unless Gaps in near-white
+       is on — white areas get a low, slow baseline wave (15% amplitude,
+       25% frequency) instead of a gap, so every stripe is one continuous
+       sine from top to bottom. The step adapts so every sine cycle gets
+       at least 8 samples, or the wave aliases into noise instead of a
+       clean sine. */
     var ampFloor=0.15, freqFloor=0.25, freqMax=8; /* darkest areas run at 8x the base frequency, so the min wavelength is Wavelength/8 */
     var maxPhaseStep=Math.PI/4;
     var mod=($("stripeMod")&&$("stripeMod").value)||"both"; /* both = AM+FM, am = amplitude only, fm = frequency only */
+    var gaps=$("stripeGaps")&&$("stripeGaps").checked; /* lift where this stripe's channel is truly close to white */
     var ws={cur:null,segs:[]};
     function flushStripe(){if(ws.cur&&ws.cur.pts.length>2)ws.segs.push(ws.cur);ws.cur=null;}
     var stripeIdx=0;
@@ -1347,7 +1356,8 @@ function runConvert(){
         var omega=2*Math.PI*freqF/lenPx; /* rad per image px */
         var off=ampPx*ampF*Math.sin(phase);
         var qx=base+off, qy=pos;
-        if(qx<1||qy<1||qx>W-2||qy>H-2){flushStripe();}
+        if(gaps&&d<0.07){flushStripe();}
+        else if(qx<1||qy<1||qx>W-2||qy>H-2){flushStripe();}
         else{
           if(!ws.cur)ws.cur={pts:[],pen:pen};
           ws.cur.pts.push([qx,qy]);
