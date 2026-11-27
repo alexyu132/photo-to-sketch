@@ -200,8 +200,7 @@
           <button type="button" data-v="flowfield" aria-pressed="true" class="wide">≋ Flow field — evenly spaced</button>
           <button type="button" data-v="flow" aria-pressed="false">〜 Flow squiggle</button>
           <button type="button" data-v="gradient" aria-pressed="false">✕ Gradient hatch</button>
-          <button type="button" data-v="wave" aria-pressed="false">∿ Wave squiggle</button>
-          <button type="button" data-v="cmykstripes" aria-pressed="false">▮ CMYK stripes</button>
+          <button type="button" data-v="cmykstripes" aria-pressed="false">∿ Wave stripes</button>
           <button type="button" data-v="off" aria-pressed="false">○ Contours only</button>
           <button type="button" data-v="tsp" aria-pressed="false">⌇ TSP scribble</button>
           <button type="button" data-v="colour" aria-pressed="false">▦ Colour TSP</button>
@@ -249,45 +248,6 @@
         </div>
       </div>
 
-      <div class="enginePanel" id="panel-wave" style="display:none">
-        <div class="field">
-          <div class="lab"><span>Direction</span><output id="waveOrientOut">Horizontal</output></div>
-          <div class="seg" id="waveOrientSeg" role="group" aria-label="Wave direction">
-            <button type="button" data-v="h" aria-pressed="true">Horizontal rows</button>
-            <button type="button" data-v="v" aria-pressed="false">Vertical rows</button>
-          </div>
-        </div>
-        <div class="field">
-          <div class="lab"><span>Darkness drives</span><output id="waveDriveOut">Amp + freq</output></div>
-          <div class="seg3" id="waveDriveSeg" role="group" aria-label="What darkness drives">
-            <button type="button" data-v="amp" aria-pressed="false">Amplitude</button>
-            <button type="button" data-v="freq" aria-pressed="false">Frequency</button>
-            <button type="button" data-v="both" aria-pressed="true">Both</button>
-          </div>
-          <p class="hint">Each row is split into per-pen segments, so the waves keep the photo&rsquo;s colours.</p>
-        </div>
-        <div class="field">
-          <label for="waveCount">Scan lines <output id="waveCountOut">50</output></label>
-          <input type="range" id="waveCount" min="14" max="120" step="1" value="50" aria-label="Number of wave scan lines, 14 to 120" />
-          <p class="hint">Fewer lines = faster plot. Sets row spacing.</p>
-        </div>
-        <div class="field">
-          <label for="waveSpacing">Row spacing <output id="waveSpacingOut">2.2 mm</output></label>
-          <input type="range" id="waveSpacing" min="0.8" max="9" step="0.1" value="2.2" aria-label="Wave row spacing, 0.8 to 9 millimetres" />
-          <p class="hint">Lower = darker, slower. Stacks with Density.</p>
-        </div>
-        <div class="field">
-          <label for="waveAmp">Max amplitude <output id="waveAmpOut">1.2 mm</output></label>
-          <input type="range" id="waveAmp" min="0.2" max="2.5" step="0.1" value="1.2" aria-label="Maximum wave amplitude, 0.2 to 2.5 millimetres" />
-          <p class="hint">How far the waves swing in the darkest areas.</p>
-        </div>
-        <div class="field">
-          <label for="waveLen">Wavelength <output id="waveLenOut">6.0 mm</output></label>
-          <input type="range" id="waveLen" min="2" max="12" step="0.5" value="6" aria-label="Wave length, 2 to 12 millimetres" />
-          <p class="hint">Base length in light areas; dark areas tighten it in Frequency / Both.</p>
-        </div>
-      </div>
-
       <div class="enginePanel" id="panel-cmykstripes" style="display:none">
         <div class="field">
           <label for="stripeSpacing">Stripe spacing <output id="stripeSpacingOut">0.4 mm</output></label>
@@ -313,8 +273,12 @@
             <input type="checkbox" id="stripeGaps" />
             Gaps in near-white
           </label>
+          <label class="check">
+            <input type="checkbox" id="stripeMono" />
+            Monochrome (black only)
+          </label>
         </div>
-        <p class="hint">Stripes cycle cyan, magenta, yellow, black down the bed; each stripe&rsquo;s wiggle follows its own ink channel (amplitude + frequency). Each channel picks the pen that matches the local colour — cyan picks sky, turquoise or blue; magenta picks pink or violet; yellow picks red in warm areas, lime otherwise.</p>
+        <p class="hint">Stripes cycle cyan, magenta, yellow, black down the bed; each stripe&rsquo;s wiggle follows its own ink channel (amplitude + frequency). Each channel picks the pen that matches the local colour — cyan picks sky, turquoise or blue; magenta picks pink or violet; yellow picks red in warm areas, lime otherwise. Monochrome draws every stripe in black.</p>
       </div>
 
       <div class="enginePanel" id="panel-off" style="display:none">
@@ -636,7 +600,6 @@ var $=function(id){return document.getElementById(id);};
 var state={img:null,imgURL:null,fileName:"",svg:"",paths:0,view:"sketch",busy:false,rotation:0};
 var shading="flowfield";
 var hatchAngle=0,strokeLen=1; /* engine-specific slider state (Gradient angle, Flow stroke length) */
-var waveOrient="h",waveDrive="both"; /* Wave squiggle state */
 /* Engines ported from Photo to Plot: each is a complete drawing of its own,
    so they skip the shared Density/cap group and the contour pass. */
 var PORTED={tsp:1,colour:1,stipple:1,spiral:1,dither:1};
@@ -647,8 +610,7 @@ var SHADING_HINTS={
   flowfield:"Smoothest lines. Fast plot.",
   flow:"Best for dark, textured backgrounds.",
   gradient:"Best on smooth walls and gradients.",
-  wave:"Smooth sine rows — darkness sets the wiggle.",
-  cmykstripes:"Vertical cyan, magenta, yellow and black stripes — each driven by its own ink channel.",
+  cmykstripes:"Vertical wave stripes — each driven by its own ink channel.",
   off:"Edges only. Fastest plot.",
   tsp:"One continuous line through sampled points.",
   colour:"A TSP scribble per pen, colours matched in OKLab.",
@@ -665,10 +627,10 @@ function bindSeg(id,fn){
 }
 bindSeg("shadingSeg",function(v){
   shading=v;
-  $("shadingOut").textContent={flowfield:"Flow field",flow:"Flow",gradient:"Gradient",wave:"Wave",cmykstripes:"CMYK stripes",off:"Off",tsp:"TSP",colour:"Colour TSP",stipple:"Stipple",spiral:"Spiral",dither:"Dither"}[v];
+  $("shadingOut").textContent={flowfield:"Flow field",flow:"Flow",gradient:"Gradient",cmykstripes:"Wave stripes",off:"Off",tsp:"TSP",colour:"Colour TSP",stipple:"Stipple",spiral:"Spiral",dither:"Dither"}[v];
   $("shadingHint").textContent=SHADING_HINTS[v];
   /* each engine shows only its own bespoke controls */
-  ["flowfield","flow","gradient","wave","cmykstripes","off","tsp","colour","stipple","spiral","dither"].forEach(function(k){
+  ["flowfield","flow","gradient","cmykstripes","off","tsp","colour","stipple","spiral","dither"].forEach(function(k){
     $("panel-"+k).style.display=(k===v)?"":"none";
   });
   /* Density and the cap only feed Sketch's shading engines — the ported
@@ -679,20 +641,11 @@ bindSeg("shadingSeg",function(v){
   $("densityField").style.display=noShade?"none":"";
   $("capField").style.display=noShade?"none":"";
   $("shadingAmountHead").style.display=noShade?"none":"";
-  /* Wave squiggle is pure sine rows and the ported engines are complete
-     drawings on their own — contours would just clutter them */
-  var noContour=(v==="wave"||v==="cmykstripes"||!!PORTED[v]);
+  /* Wave stripes is a complete drawing on its own, and so are the
+     ported engines — contours would just clutter them */
+  var noContour=(v==="cmykstripes"||!!PORTED[v]);
   $("contourHead").style.display=noContour?"none":"";
   $("contourField").style.display=noContour?"none":"";
-});
-bindSeg("waveOrientSeg",function(v){
-  waveOrient=v;
-  $("waveOrientOut").textContent=(v==="h")?"Horizontal":"Vertical";
-  syncWaveCount(); /* perpendicular size changes with direction */
-});
-bindSeg("waveDriveSeg",function(v){
-  waveDrive=v;
-  $("waveDriveOut").textContent={amp:"Amplitude",freq:"Frequency",both:"Amp + freq"}[v];
 });
 function syncDensity(){
   var v=parseFloat($("density").value);
@@ -715,37 +668,10 @@ function setHatch(v){
   $("hatchAngleOut").textContent=v+"°";
 }
 $("hatchAngle").addEventListener("input",function(){setHatch(this.value);});
-$("waveSpacing").addEventListener("input",function(){$("waveSpacingOut").textContent=parseFloat($("waveSpacing").value).toFixed(1)+" mm";syncWaveCount();});
 /* Scan lines <-> row spacing: two views of the same setting. The count is
    the perpendicular size of the fitted drawing (mm) divided by the spacing;
    dragging the count rewrites the spacing, and vice versa. Exact once a
    photo is loaded; before that it uses a typical fitted size. */
-function wavePerpMm(){
-  if(state.img&&state.img.naturalWidth){
-    var sc0=Math.min(1,680/state.img.naturalWidth);
-    var W=Math.max(80,Math.round(state.img.naturalWidth*sc0));
-    var H=Math.max(80,Math.round(state.img.naturalHeight*sc0));
-    var m=Math.min(108/W,130/H);
-    return waveOrient==="h"?H*m:W*m;
-  }
-  return waveOrient==="h"?110:100;
-}
-function syncWaveCount(){
-  var c=Math.round(wavePerpMm()/parseFloat($("waveSpacing").value));
-  if(c<14)c=14;if(c>120)c=120;
-  $("waveCount").value=c;$("waveCountOut").textContent=c;
-}
-function syncWaveSpacingFromCount(){
-  var c=parseFloat($("waveCount").value);
-  $("waveCountOut").textContent=c;
-  var sp=wavePerpMm()/c;
-  if(sp<0.8)sp=0.8;if(sp>9)sp=9;
-  $("waveSpacing").value=sp;
-  $("waveSpacingOut").textContent=sp.toFixed(1)+" mm";
-}
-$("waveCount").addEventListener("input",syncWaveSpacingFromCount);
-$("waveAmp").addEventListener("input",function(){$("waveAmpOut").textContent=parseFloat($("waveAmp").value).toFixed(1)+" mm";});
-$("waveLen").addEventListener("input",function(){$("waveLenOut").textContent=parseFloat($("waveLen").value).toFixed(1)+" mm";});
 $("stripeSpacing").addEventListener("input",function(){$("stripeSpacingOut").textContent=parseFloat($("stripeSpacing").value).toFixed(1)+" mm";});
 $("stripeAmp").addEventListener("input",function(){$("stripeAmpOut").textContent=parseFloat($("stripeAmp").value).toFixed(2)+" mm";});
 $("stripeLen").addEventListener("input",function(){$("stripeLenOut").textContent=parseFloat($("stripeLen").value).toFixed(1)+" mm";});
@@ -812,7 +738,6 @@ function loadFile(f){
     $("thumbrow").classList.add("show");
     state.rotation=0;syncRotation(); /* rotation is per-photo: a new upload starts unrotated */
     $("rotrow").classList.add("show");
-    syncWaveCount(); /* fitted size is known now, so the count is exact */
     setStatus("Photo loaded. Converting…");
     convert();
   };
@@ -1027,8 +952,8 @@ function mergeStrokes(list,tol){
 }
 
 /* ============ Convert (automatic: on upload and on any control change) ============ */
-["shadingSeg","waveOrientSeg","waveDriveSeg"].forEach(function(id){$(id).addEventListener("click",function(){if(state.img&&!state.busy)setTimeout(convert,30);});});
-["density","detail","dramatic","densityCap","brightness","contrast","saturation","flowSpacing","smooth","strokeLen","hatchAngle","waveSpacing","waveAmp","waveLen","waveCount","stripeSpacing","stripeAmp","stripeLen","stripeMod","stripeGaps","tspPoints","tspGamma","tspEdge","tspRelax","tspSmooth","colPoints","colPaper","colSat","stipRelax","stipPoints","stipGamma","stipR","spirPitch","spirMod","spirPaper","dithCell","dithDot"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
+["shadingSeg"].forEach(function(id){$(id).addEventListener("click",function(){if(state.img&&!state.busy)setTimeout(convert,30);});});
+["density","detail","dramatic","densityCap","brightness","contrast","saturation","flowSpacing","smooth","strokeLen","hatchAngle","stripeSpacing","stripeAmp","stripeLen","stripeMod","stripeGaps","stripeMono","tspPoints","tspGamma","tspEdge","tspRelax","tspSmooth","colPoints","colPaper","colSat","stipRelax","stipPoints","stipGamma","stipR","spirPitch","spirMod","spirPaper","dithCell","dithDot"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
 ["fillWhite","colour","stipVary","colSmooth","adaptiveSmooth"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
 $("penSet").addEventListener("change",function(){setPenSet($("penSet").value);if(state.img&&!state.busy)convert();});
 
@@ -1348,96 +1273,12 @@ function runConvert(){
       if(++drawn>=2600)break;
     }
   }
-  /* ---- shading: wave squiggle (rows/columns of sine waves) ----
-     Each row is a true sine whose phase is integrated along the row, so local
-     frequency can vary with darkness without tearing the wave. Amplitude
-     follows darkness^0.75 (midtones still wiggle); frequency tightens up to
-     ~3.2x in black when Frequency/Both is picked. Light areas are skipped
-     outright — a zero-amplitude wave would still ink a straight line.
-     Colour: darkness and RGB are blurred first, so pen changes land on real
-     colour boundaries instead of pixel noise, and each row is split into
-     one stroke per pen run. Alternate rows are drawn in reverse
-     (serpentine) to cut pen-up travel. For plot speed the finished sine is
-     thinned to ~9 points per wave (peaks and troughs always kept): far
-     fewer, longer segments than the fine sampling, so the plotter can run
-     the curves fast instead of crawling point to point. */
-  function wavePass(){
-    var spacingPx=(parseFloat($("waveSpacing").value)||2.2)/mmPx/density;
-    if(spacingPx<2.5)spacingPx=2.5;
-    var ampPx=(parseFloat($("waveAmp").value)||1.2)/mmPx;
-    var lenPx=(parseFloat($("waveLen").value)||6)/mmPx;
-    if(lenPx<4)lenPx=4;
-    var darkS=gaussBlur(dark,W,H,1.8);
-    var Rf=new Float32Array(N),Gf=new Float32Array(N),Bf=new Float32Array(N),i;
-    for(i=0;i<N;i++){Rf[i]=R[i];Gf[i]=G[i];Bf[i]=B[i];}
-    var Rb=gaussBlur(Rf,W,H,2),Gb=gaussBlur(Gf,W,H,2),Bb=gaussBlur(Bf,W,H,2);
-    var horiz=waveOrient==="h";
-    var L=horiz?W:H,Bdim=horiz?H:W;
-    var step=1.1;
-    var ws={cur:null,segs:[]};
-    function flushWave(){if(ws.cur&&ws.cur.pts.length>2)ws.segs.push(ws.cur);ws.cur=null;}
-    var rowIdx=0;
-    for(var base=spacingPx*0.5;base<Bdim-1;base+=spacingPx,rowIdx++){
-      var phase=0;
-      ws.cur=null;ws.segs=[];
-      for(var pos=0;pos<L-1;pos+=step){
-        var sx=horiz?pos:base, sy=horiz?base:pos;
-        var xi=Math.min(W-1,Math.max(0,Math.round(sx))), yi=Math.min(H-1,Math.max(0,Math.round(sy)));
-        var idx=yi*W+xi;
-        var d=darkS[idx];
-        var ampF=(waveDrive==="freq")?1:Math.pow(Math.min(1,Math.max(0,d)),0.75);
-        var freqF=(waveDrive==="amp")?1:(1+2.2*d);
-        phase+=2*Math.PI*step/lenPx*freqF;
-        if(d<0.07||isPaper(idx)){flushWave();continue;}
-        var off=ampPx*ampF*Math.sin(phase);
-        var qx=horiz?sx:base+off, qy=horiz?base+off:sy;
-        if(qx<1||qy<1||qx>W-2||qy>H-2){flushWave();continue;}
-        var pen=nearestPen(Math.round(Rb[idx]),Math.round(Gb[idx]),Math.round(Bb[idx]),colour);
-        if(ws.cur&&ws.cur.pen!==pen){
-          var lp=ws.cur.pts[ws.cur.pts.length-1];
-          flushWave();ws.cur={pts:[lp],pen:pen};
-        }
-        if(!ws.cur)ws.cur={pts:[],pen:pen};
-        ws.cur.pts.push([qx,qy]);
-      }
-      flushWave();
-      var segs=ws.segs;
-      if(rowIdx%2===1){segs.reverse();segs.forEach(function(s){s.pts.reverse();});}
-      var emitStep=Math.max(2.2,Math.min(7,lenPx/9)); /* ~9 points per base wavelength */
-      segs.forEach(function(s){addStroke(thinSine(s.pts,horiz,emitStep),s.pen,0.5);});
-    }
-  }
-  /* CMYK stripes: dense vertical stripes cycling cyan, magenta, yellow,
-     black — the subtractive separations for white paper. Each stripe is a
-     tight sine whose amplitude AND frequency are both driven by its own
-     ink channel at that point: cyan follows how much red is missing,
-     magenta how much green is missing, yellow how much blue is missing,
-     black the common darkness. Dark areas swing further and tighter,
-     light areas run nearly straight; a white area gets a low, slow
-     baseline wave so the stripe stays continuous — unless Gaps in
-     near-white is on, in which case a stripe lifts wherever its own
-     channel is truly close to white, leaving bare paper for contrast.
-     Pens are the closest the BIC set has to each separation: sky blue
-     for cyan, pink for magenta, lime for yellow (no yellow pen exists),
-     black for black. The stripes carry the image alone, like Wave. */
-  /* Colour compensation, measured on a hue x value rainbow (12 hues x
-     5 values, dark to light). The stripes output luminance is compressed:
-     light colours come out ~3x too dark, dark colours ~3x too light, mids
-     match — the output is nearly flat per hue, because for a saturated
-     colour some CMYK channel always has dense ink. So this preprocessing
-     brightens light colours (scale > 1) and leaves dark colours alone
-     (scale 1): darkening the input cannot darken the output past the
-     pens' own ink, it only shrinks the denominator. One-sided, so it
-     helps the lights without hurting the darks. Measured: mean abs
-     luminance error 0.104 -> 0.076, mean |ratio-1| 0.87 -> 0.76.
-     Table rows are values [0.325, 0.5, 0.675, 0.85], columns are hues
-     [15..345 step 30]; bilinearly interpolated, blended to 1.0 as
-     saturation falls so neutrals are untouched. Applied to the linear-
-     light channels before the blur, so the stripe loop itself is
-     unchanged — the algorithm is untouched, only its input is adjusted. */
-  /* One table per pen set — the EYEYE pens are darker/more saturated
-     than BIC, so the same hue needs more brightening (up to 2.5x vs 2x),
-     and even the mid-tones are too dark for EYEYE while BIC mids match. */
+  /* Colour compensation tables — one per pen set. The EYEYE pens are
+     darker/more saturated than BIC, so the same hue needs more
+     brightening (up to 2.5x vs 2x), and even the mid-tones are too dark
+     for EYEYE while BIC mids match. Fitted from a hue x value rainbow
+     measured with each pen set. One-sided: brightens light colours,
+     leaves dark colours at 1.0 (the pens can't go darker than ink). */
   var STRIPE_COMP_BIC=[
     [1,1,1,1,1,1,1,1,1,1,1,1],
     [1.05,1.25,1.37,1.08,1.14,1.25,1.19,1,1,1,1,1],
@@ -1508,9 +1349,24 @@ function runConvert(){
          magenta) and blues (no yellow) are untouched, and neutrals are
          unchanged. */
       var chanDark=[new Float32Array(N),new Float32Array(N),new Float32Array(N),new Float32Array(N)];
+      var mono=$("stripeMono")&&$("stripeMono").checked;
       for(i=0;i<N;i++){
         var cd=1-srgbToLin(Rb[i]),md=1-srgbToLin(Gb[i]),yd=1-srgbToLin(Bb[i]);
-        var k=Math.min(cd,md,yd);
+        if(mono){
+          /* Monochrome: black only, full GCR — the K channel is the
+             luminance darkness, so a B&W drawing still plots in black.
+             Only the K stripes draw (every 4th stripe), which matches
+             the original full-GCR output exactly. */
+          var km=Math.min(cd,md,yd);
+          chanDark[0][i]=0;chanDark[1][i]=0;chanDark[2][i]=0;chanDark[3][i]=km;
+          continue;
+        }
+        /* Partial GCR (0.7): the colour pens carry more of the dark areas
+           instead of black alone, so dark colour photos read as colour
+           rather than a black smear. Full GCR left the black channel
+           dominating (mean K 0.80 on the Powell cable car photo, 90% of
+           pixels over 0.5) and the light areas disappeared under it. */
+        var k=Math.min(cd,md,yd)*0.7;
         var c2=cd-k,m2=md-k,y2=yd-k;
         chanDark[0][i]=c2;
         chanDark[1][i]=Math.min(1,m2*(1+0.8*y2));
@@ -1575,7 +1431,8 @@ function runConvert(){
              a blend. */
           var penHere=pen;
           var dt=(BAYER[((yi>>2)&3)*4+((xi>>2)&3)]+0.5)/16; /* coarse 2D dither, 0..1 */
-          if(ch===0){
+          if(mono)penHere=PENS[0];
+          else if(ch===0){
             if(Bb[idx]>Gb[idx]*(1.4+(dt-0.5)*0.4)&&Bb[idx]>Rb[idx]*1.5)penHere=PENS[6];
             else if(Gb[idx]>Bb[idx]*(0.75+(dt-0.5)*0.2)&&Rb[idx]<0.55*Bb[idx]&&Gb[idx]>Rb[idx]*1.5)penHere=PENS[5];
           }else if(ch===1){
@@ -2266,7 +2123,6 @@ function runConvert(){
   if(shading==="gradient")gradientPass(1,5);
   else if(shading==="flow")flowPass(1);
   else if(shading==="flowfield")flowFieldPass();
-  else if(shading==="wave")wavePass();
   else if(shading==="cmykstripes")cmykStripePass();
   else if(shading==="tsp")portTSP();
   else if(shading==="colour")portColour();
@@ -2275,9 +2131,9 @@ function runConvert(){
   else if(shading==="dither")portDither();
   setProgress(0.7);
 
-  /* Wave squiggle draws no contours — the sine rows carry the image alone.
+  /* Wave stripes draws no contours — the stripes carry the image alone.
      The ported engines are complete drawings too, so they skip contours. */
-  if(shading!=="wave"&&shading!=="cmykstripes"&&!PORTED[shading]){
+  if(shading!=="cmykstripes"&&!PORTED[shading]){
   /* ---- contours: FDoG edges traced along the edge-tangent flow ---- */
   /* Threshold with real bite across the whole slider: detail 0 keeps only the
      strongest edges in the photo, detail 1 keeps faint texture too. */
@@ -2463,7 +2319,7 @@ function saveSettings(){
       else s[el.id]=el.value;
     });
     /* segmented controls: the selected button's value */
-    [["shadingSeg","shading"],["waveOrientSeg","waveOrient"],["waveDriveSeg","waveDrive"]].forEach(function(pair){
+    [["shadingSeg","shading"]].forEach(function(pair){
       var b=document.querySelector("#"+pair[0]+" button[aria-pressed=\"true\"]");
       if(b)s[pair[1]]=b.getAttribute("data-v");
     });
@@ -2483,7 +2339,7 @@ function loadSettings(){
     el.dispatchEvent(new Event("input",{bubbles:true}));
   });
   /* segmented controls: click the saved button so its callback runs */
-  [["shadingSeg","shading"],["waveOrientSeg","waveOrient"],["waveDriveSeg","waveDrive"]].forEach(function(pair){
+  [["shadingSeg","shading"]].forEach(function(pair){
     if(!s[pair[1]])return;
     var b=document.querySelector("#"+pair[0]+" button[data-v=\""+s[pair[1]]+"\"]");
     if(b)b.click();
