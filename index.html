@@ -616,7 +616,7 @@ function rgbToOklab(r,g,b){
           0.0259040371*l+0.7827717662*m-0.8086757660*s];
 }
 function penHue(p){var c=p.rgb,mx=Math.max(c[0],c[1],c[2]),mn=Math.min(c[0],c[1],c[2]),dl=mx-mn;if(dl===0)return 0;var h;if(mx===c[0])h=60*(((c[1]-c[2])/dl)%6);else if(mx===c[1])h=60*((c[2]-c[0])/dl+2);else h=60*((c[0]-c[1])/dl+4);if(h<0)h+=360;return h;}
-function setupPens(list){list.forEach(function(p){var c=hexRgb(p.hex);p.rgb=c;p.lab=rgbToOklab(c[0],c[1],c[2]);p.hue=penHue(p);});}
+function setupPens(list){list.forEach(function(p){var c=hexRgb(p.hex);p.rgb=c;p.lab=rgbToOklab(c[0],c[1],c[2]);p.hue=penHue(p);p.lum=0.2126*srgbToLin(c[0])+0.7152*srgbToLin(c[1])+0.0722*srgbToLin(c[2]);});}
 setupPens(PALETTES.bic);setupPens(PALETTES.eyeye);
 function setPenSet(name){PENS=PALETTES[name]||PALETTES.bic;}
 /* BIC Cristal datasheet line width: the 1.6 mm figure is the ball diameter,
@@ -1448,21 +1448,25 @@ function runConvert(){
        it cut the ink coverage, so more white showed through and dE
        got worse (26.1). The fix is to use the matching pen for ALL
        the stripes in an area, so coverage stays full and the hue stays
-       pure. inkNeed is how much ink the local colour wants (the max
-       channel darkness after GCR — high for vivid and dark colours,
-       zero for white); spotPen is the pen whose hue is closest to the
-       local hue, black for neutrals. */
+       pure.
+       Luminance is matched by smoothly blending the pen with the
+       paper: inkNeed is the fraction of pen coverage that makes the
+       average luminance equal the target luminance — (1-targetLum) /
+       (1-penLum) — so light colours draw sparse and dark colours draw
+       dense, instead of every saturated colour drawing at full ink.
+       The pen choice is dithered near hue boundaries (Bayer), so one
+       pen gives way to the next by interleaving across a narrow zone
+       instead of a hard band edge. spotPen is the pen whose hue is
+       closest to the local hue, black for neutrals. */
+    var BAYER=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5];
     var inkNeed=new Float32Array(N),spotPen=new Uint8Array(N),i;
     for(i=0;i<N;i++){
-      var cd=1-srgbToLin(Rb[i]),md=1-srgbToLin(Gb[i]),yd=1-srgbToLin(Bb[i]);
-      var k=Math.min(cd,md,yd);
-      var c2=cd-k,m2=md-k,y2=yd-k;
-      inkNeed[i]=Math.max(c2,m2,y2,k);
+      var Rl=srgbToLin(Rb[i]),Gl=srgbToLin(Gb[i]),Bl=srgbToLin(Bb[i]);
       var sR=Rb[i],sG=Gb[i],sB=Bb[i];
       var mx=Math.max(sR,sG,sB),mn=Math.min(sR,sG,sB),dl=mx-mn;
-      if(dl<0.02||mx===0){spotPen[i]=0;continue;}
+      if(dl<0.02||mx===0){spotPen[i]=0;inkNeed[i]=Math.max(0,Math.min(1,(1-(0.2126*Rl+0.7152*Gl+0.0722*Bl))/(1-PENS[0].lum)));continue;}
       var sat=dl/mx;
-      if(sat<0.25){spotPen[i]=0;continue;} /* neutral: black carries it */
+      if(sat<0.25){spotPen[i]=0;inkNeed[i]=Math.max(0,Math.min(1,(1-(0.2126*Rl+0.7152*Gl+0.0722*Bl))/(1-PENS[0].lum)));continue;} /* neutral: black carries it */
       var hue;
       if(mx===sR)hue=60*(((sG-sB)/dl)%6);
       else if(mx===sG)hue=60*((sB-sR)/dl+2);
@@ -1472,14 +1476,36 @@ function runConvert(){
          handled above for neutrals). Works for both palettes: BIC has
          no orange so orange falls to red, EYEYE has a real orange and
          a real green. Ties (BIC sky/turquoise share a hue) go to the
-         first pen. */
-      var best=1,bd=1e9;
+         first pen. Near a boundary between two pens, the Bayer value
+         at this pixel picks between them, so the two pens interleave
+         across a narrow zone — a smooth blend instead of a hard edge. */
+      var best=1,bd=1e9,second=1,sd=1e9;
       for(var pi=1;pi<8;pi++){
         var dh=Math.abs(hue-PENS[pi].hue);
         if(dh>180)dh=360-dh;
-        if(dh<bd){bd=dh;best=pi;}
+        if(dh<bd){sd=bd;second=best;bd=dh;best=pi;}
+        else if(dh<sd){sd=dh;second=pi;}
       }
-      spotPen[i]=best;
+      var xi=i%W, yi=(i/W)|0;
+      var dt=(BAYER[((yi>>2)&3)*4+((xi>>2)&3)]+0.5)/16; /* 0..1 */
+      /* Blend zone: only dither when the hue is genuinely ambiguous —
+         the two nearest pens within 6 deg of each other in distance.
+         A looser threshold dithers flat areas too (orange squares on
+         a red wall) because a pen 20 deg away still counts as "close".
+         The closer the hue is to the boundary, the more the second
+         pen appears — a smooth blend instead of a hard band edge. */
+      if(sd-bd<6&&dt<(0.5+(bd-sd)/12)){
+        spotPen[i]=second;
+      }else{
+        spotPen[i]=best;
+      }
+      /* Luminance-matched ink: the coverage that makes the average
+         (pen + white paper) hit the target luminance. */
+      var targetLum=0.2126*Rl+0.7152*Gl+0.0722*Bl;
+      var penLum=PENS[spotPen[i]].lum;
+      var denom=1-penLum;
+      var cov=denom>0.001?(1-targetLum)/denom:1;
+      inkNeed[i]=Math.max(0,Math.min(1,cov));
     }
     /* Per-hue lightness compensation, calibrated on a full-saturation
        rainbow: the composite comes out far too dark in the
