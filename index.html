@@ -616,7 +616,7 @@ function rgbToOklab(r,g,b){
           0.0259040371*l+0.7827717662*m-0.8086757660*s];
 }
 function penHue(p){var c=p.rgb,mx=Math.max(c[0],c[1],c[2]),mn=Math.min(c[0],c[1],c[2]),dl=mx-mn;if(dl===0)return 0;var h;if(mx===c[0])h=60*(((c[1]-c[2])/dl)%6);else if(mx===c[1])h=60*((c[2]-c[0])/dl+2);else h=60*((c[0]-c[1])/dl+4);if(h<0)h+=360;return h;}
-function setupPens(list){list.forEach(function(p){var c=hexRgb(p.hex);p.rgb=c;p.lab=rgbToOklab(c[0],c[1],c[2]);p.hue=penHue(p);p.lum=0.2126*srgbToLin(c[0])+0.7152*srgbToLin(c[1])+0.0722*srgbToLin(c[2]);});}
+function setupPens(list){list.forEach(function(p){var c=hexRgb(p.hex);p.rgb=c;p.lab=rgbToOklab(c[0],c[1],c[2]);p.hue=penHue(p);p.lum=0.2126*srgbToLin(c[0])+0.7152*srgbToLin(c[1])+0.0722*srgbToLin(c[2]);var mx=Math.max(c[0],c[1],c[2]),mn=Math.min(c[0],c[1],c[2]);p.sat=mx>0?(mx-mn)/mx:0;});}
 setupPens(PALETTES.bic);setupPens(PALETTES.eyeye);
 function setPenSet(name){PENS=PALETTES[name]||PALETTES.bic;}
 /* BIC Cristal datasheet line width: the 1.6 mm figure is the ball diameter,
@@ -1438,47 +1438,33 @@ function runConvert(){
     var Rf=new Float32Array(N),Gf=new Float32Array(N),Bf=new Float32Array(N),i;
     for(i=0;i<N;i++){Rf[i]=R[i];Gf[i]=G[i];Bf[i]=B[i];}
     var Rb=gaussBlur(Rf,W,H,1.8),Gb=gaussBlur(Gf,W,H,1.8),Bb=gaussBlur(Bf,W,H,1.8);
-    /* Spot-colour stripes: each stripe uses the ONE pen that matches the
-       local colour, instead of the CMYK process mix. The blue pen IS
-       blue, so a blue area draws blue stripes — not a blue stripe plus
-       a violet stripe multiplied into muddy purple. The old CMYK cycle
-       made every vivid colour a blend of two pens plus white paper,
-       which is why the swatch grid came back grey and desaturated
-       (mean dE00 23.4). Suppressing the extra channel did not work —
-       it cut the ink coverage, so more white showed through and dE
-       got worse (26.1). The fix is to use the matching pen for ALL
-       the stripes in an area, so coverage stays full and the hue stays
-       pure.
-       Luminance is matched by smoothly blending the pen with the
-       paper: inkNeed is the fraction of pen coverage that makes the
-       average luminance equal the target luminance — (1-targetLum) /
-       (1-penLum) — so light colours draw sparse and dark colours draw
-       dense, instead of every saturated colour drawing at full ink.
-       The pen choice is dithered near hue boundaries (Bayer), so one
-       pen gives way to the next by interleaving across a narrow zone
-       instead of a hard band edge. spotPen is the pen whose hue is
-       closest to the local hue, black for neutrals. */
+    /* Blend two pens by hue: the stripe colour is a blend of the TWO
+       nearest chromatic pens, not a single "closest pen". A hue
+       exactly on a pen draws that pen alone; a hue midway between
+       two pens draws them 50/50, and the Multiply overlap blends
+       them into the in-between colour. Picking just the closest pen
+       kills the blending entirely — teal becomes either blue or
+       green, never the blend. spotPen is the nearest, spotPen2 the
+       second nearest, blendW the fraction of the second pen (0 when
+       the hue sits on the nearest pen, up to 0.5 midway). Black for
+       neutrals. */
     var BAYER=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5];
-    var inkNeed=new Float32Array(N),spotPen=new Uint8Array(N),i;
+    var inkNeed=new Float32Array(N),spotPen=new Uint8Array(N),spotPen2=new Uint8Array(N),blendW=new Float32Array(N),i;
     for(i=0;i<N;i++){
       var Rl=srgbToLin(Rb[i]),Gl=srgbToLin(Gb[i]),Bl=srgbToLin(Bb[i]);
       var sR=Rb[i],sG=Gb[i],sB=Bb[i];
       var mx=Math.max(sR,sG,sB),mn=Math.min(sR,sG,sB),dl=mx-mn;
-      if(dl<0.02||mx===0){spotPen[i]=0;inkNeed[i]=Math.max(0,Math.min(1,(1-(0.2126*Rl+0.7152*Gl+0.0722*Bl))/(1-PENS[0].lum)));continue;}
+      if(dl<0.02||mx===0){spotPen[i]=0;spotPen2[i]=0;blendW[i]=0;inkNeed[i]=Math.max(0,Math.min(1,(1-(0.2126*Rl+0.7152*Gl+0.0722*Bl))/(1-PENS[0].lum)));continue;}
       var sat=dl/mx;
-      if(sat<0.25){spotPen[i]=0;inkNeed[i]=Math.max(0,Math.min(1,(1-(0.2126*Rl+0.7152*Gl+0.0722*Bl))/(1-PENS[0].lum)));continue;} /* neutral: black carries it */
+      if(sat<0.25){spotPen[i]=0;spotPen2[i]=0;blendW[i]=0;inkNeed[i]=Math.max(0,Math.min(1,(1-(0.2126*Rl+0.7152*Gl+0.0722*Bl))/(1-PENS[0].lum)));continue;} /* neutral: black carries it */
       var hue;
       if(mx===sR)hue=60*(((sG-sB)/dl)%6);
       else if(mx===sG)hue=60*((sB-sR)/dl+2);
       else hue=60*((sR-sG)/dl+4);
       if(hue<0)hue+=360;
-      /* Nearest chromatic pen by hue in the active palette (black is
-         handled above for neutrals). Works for both palettes: BIC has
-         no orange so orange falls to red, EYEYE has a real orange and
-         a real green. Ties (BIC sky/turquoise share a hue) go to the
-         first pen. Near a boundary between two pens, the Bayer value
-         at this pixel picks between them, so the two pens interleave
-         across a narrow zone — a smooth blend instead of a hard edge. */
+      /* Two nearest chromatic pens by hue in the active palette.
+         Works for both palettes: BIC has no orange so orange falls
+         to red, EYEYE has a real orange and a real green. */
       var best=1,bd=1e9,second=1,sd=1e9;
       for(var pi=1;pi<8;pi++){
         var dh=Math.abs(hue-PENS[pi].hue);
@@ -1486,25 +1472,27 @@ function runConvert(){
         if(dh<bd){sd=bd;second=best;bd=dh;best=pi;}
         else if(dh<sd){sd=dh;second=pi;}
       }
-      var xi=i%W, yi=(i/W)|0;
-      var dt=(BAYER[((yi>>2)&3)*4+((xi>>2)&3)]+0.5)/16; /* 0..1 */
-      /* Blend zone: only dither when the hue is genuinely ambiguous —
-         the two nearest pens within 6 deg of each other in distance.
-         A looser threshold dithers flat areas too (orange squares on
-         a red wall) because a pen 20 deg away still counts as "close".
-         The closer the hue is to the boundary, the more the second
-         pen appears — a smooth blend instead of a hard band edge. */
-      if(sd-bd<6&&dt<(0.5+(bd-sd)/12)){
-        spotPen[i]=second;
-      }else{
-        spotPen[i]=best;
-      }
-      /* Luminance-matched ink: the coverage that makes the average
-         (pen + white paper) hit the target luminance. */
+      spotPen[i]=best; spotPen2[i]=second;
+      /* Blend weight for the second pen: 0 when the hue sits on the
+         nearest pen, 0.5 when midway between the two. bd<=sd always,
+         so bd/(bd+sd) runs 0..0.5. */
+      blendW[i]=(bd+sd)>0?bd/(bd+sd):0;
+      /* Luminance-matched ink, weighted by saturation: the coverage
+         that makes the average (pen + white paper) hit the target
+         luminance, times the target saturation over the pen
+         saturation. A pastel colour is light AND muted — the pen is
+         dark and vivid, so matching luminance alone still draws far
+         too much ink (the coral wall came out 5x too dark and 3.5x
+         too saturated). Weighting by saturation pulls pastel areas
+         back to sparse ink. Neutrals use luminance alone (black pen
+         has no saturation to match). */
       var targetLum=0.2126*Rl+0.7152*Gl+0.0722*Bl;
       var penLum=PENS[spotPen[i]].lum;
       var denom=1-penLum;
       var cov=denom>0.001?(1-targetLum)/denom:1;
+      if(spotPen[i]!==0&&PENS[spotPen[i]].sat>0.05){
+        cov*=Math.max(0,Math.min(1,sat/PENS[spotPen[i]].sat));
+      }
       inkNeed[i]=Math.max(0,Math.min(1,cov));
     }
     /* Per-hue lightness compensation, calibrated on a full-saturation
@@ -1569,7 +1557,30 @@ function runConvert(){
         var omega=2*Math.PI*freqF/lenPx; /* rad per image px */
         var off=ampPx*ampF*Math.sin(phase);
         var qx=base+off, qy=pos;
-        if(gaps&&d<0.07){flushStripe();}
+        /* Blend the two nearest pens: the pen for this point is picked
+           by dithering between spotPen (nearest hue) and spotPen2
+           (second nearest), weighted by how close the hue is to each.
+           A hue exactly on a pen draws that pen alone; a hue midway
+           between two pens draws them 50/50, and the Multiply overlap
+           blends them into the in-between colour. This restores the
+           blending the single-pen spot colour killed. */
+        var bw=blendW[idx];
+        var bpen=spotPen[idx];
+        if(bw>0){
+          var bd2=(BAYER[((yi>>1)&3)*4+((xi>>1)&3)]+0.5)/16;
+          if(bd2<bw)bpen=spotPen2[idx];
+        }
+        penHere=PENS[bpen];
+        /* Dot the line for light colours: the spacing is tighter than
+           the line, so the base coverage is ~100% and low ink need
+           alone cannot lighten a pastel area. The pen lifts in a
+           Bayer-dotted pattern, the dot density following the ink
+           need (doubled, so pastels keep ~40% of the line instead of
+           ~20% — the unscaled version left the image mostly white).
+           This lightens without killing the two-pen blend above. */
+        var bdot=(BAYER[((yi>>2)&3)*4+((xi>>2)&3)]+0.5)/16;
+        if(bdot>Math.min(1,d*2)){flushStripe();}
+        else if(gaps&&d<0.07){flushStripe();}
         else if(qx<1||qy<1||qx>W-2||qy>H-2){flushStripe();}
         else{
           if(!ws.cur)ws.cur={pts:[],pen:penHere};
