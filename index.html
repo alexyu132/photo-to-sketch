@@ -640,9 +640,10 @@ bindSeg("shadingSeg",function(v){
     $("panel-"+k).style.display=(k===v)?"":"none";
   });
   /* Density and the cap only feed Sketch's shading engines — the ported
-     engines carry their own amount controls, so hide the group for them
-     and for Contours only */
-  var noShade=(v==="off"||!!PORTED[v]);
+     engines carry their own amount controls, CMYK stripes has its own
+     Stripe spacing slider and reads the uncapped darkness, so hide the
+     group for them and for Contours only */
+  var noShade=(v==="off"||v==="cmykstripes"||!!PORTED[v]);
   $("densityField").style.display=noShade?"none":"";
   $("capField").style.display=noShade?"none":"";
   $("shadingAmountHead").style.display=noShade?"none":"";
@@ -1387,7 +1388,11 @@ function runConvert(){
      for cyan, pink for magenta, lime for yellow (no yellow pen exists),
      black for black. The stripes carry the image alone, like Wave. */
   function cmykStripePass(){
-    var spacingPx=(parseFloat($("stripeSpacing").value)||0.4)/mmPx/density;
+    var spacingPx=(parseFloat($("stripeSpacing").value)||0.4)/mmPx; /* NOT
+       divided by Density: the Stripe spacing slider is the control here.
+       Density used to divide it, so a Density of 5 left from another
+       mode silently packed the stripes to 0.08 mm — far under the
+       0.42 mm line — and the plot came out a solid mess. */
     if(spacingPx<1)spacingPx=1;
     var ampPx=(parseFloat($("stripeAmp").value)||0.4)/mmPx;
     var lenPx=(parseFloat($("stripeLen").value)||1.5)/mmPx;
