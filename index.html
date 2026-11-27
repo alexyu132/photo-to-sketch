@@ -2289,7 +2289,7 @@ function runConvert(){
   var totalMm=0,pathCount=0,parts=[];
   Object.keys(byTool).sort().forEach(function(t){
     var pen=PENS.filter(function(p){return p.t===t;})[0];
-    parts.push('<g id="'+t+'" data-tool="'+t+'" data-pen="'+pen.name+'" stroke="'+pen.hex+'" stroke-opacity="0.75" fill="none" stroke-linecap="round" stroke-linejoin="round">');
+    parts.push('<g id="'+t+'" data-tool="'+t+'" data-pen="'+pen.name+'" stroke="'+pen.hex+'" stroke-opacity="0.85" fill="none" stroke-linecap="round" stroke-linejoin="round">');
     var group=orderGroup(byTool[t]);
     group.forEach(function(s){
       pathCount++;
