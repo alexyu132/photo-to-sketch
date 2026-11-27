@@ -1526,7 +1526,7 @@ function runConvert(){
              pen basically matches the local colour instead of always
              blending the CMYK pens. Cyan: blue where B clearly dominates
              G and R (pure/royal blue), turquoise where G and B are both
-             strong and R is low (teal), otherwise sky — so blues and
+             strong and R is low (teal — R/B bar 0.65 so light pastel cyans like a sky qualify), otherwise sky — so blues and
              teals read as themselves instead of a sky-plus-pink blend.
              Magenta: whichever magenta-family pen (pink or violet) is
              closest to the pixel's hue — blue skies get violet, reds get
@@ -1543,7 +1543,7 @@ function runConvert(){
           if(mono)penHere=PENS[0];
           else if(ch===0){
             if(Bb[idx]>Gb[idx]*(1.4+(dt-0.5)*0.4)&&Bb[idx]>Rb[idx]*1.5)penHere=penByHue(235);
-            else if(Gb[idx]>Bb[idx]*(0.75+(dt-0.5)*0.2)&&Rb[idx]<0.55*Bb[idx]&&Gb[idx]>Rb[idx]*1.5)penHere=penByHue(190);
+            else if(Gb[idx]>Bb[idx]*(0.75+(dt-0.5)*0.2)&&Rb[idx]<0.65*Bb[idx]&&Gb[idx]>Rb[idx]*1.5)penHere=penByHue(190);
           }else if(ch===1){
             /* Magenta pen by hue: pick whichever magenta-family pen
                (pink T2 or violet T7) is closest to the pixel's hue, so
