@@ -2287,7 +2287,15 @@ function runConvert(){
     return out.concat(circles);
   }
   var totalMm=0,pathCount=0,parts=[];
-  Object.keys(byTool).sort().forEach(function(t){
+  /* Plot darkest pens first, lightest last. Real ink is near-opaque when
+     layered, so a dark pen drawn last buries the lighter colours under
+     it — the old T0..T7 order put blue and violet (the 2nd/3rd darkest)
+     on top of everything. Lightness order (OKLab L): black 0.30, violet
+     0.43, blue 0.45, red 0.60, pink 0.62, turquoise 0.63, lime 0.69, sky 0.71.
+     This order also sets the import order into the plotter, which sets
+     the G-code tool order. */
+  var PLOT_ORDER=["T0","T7","T6","T1","T2","T5","T4","T3"];
+  Object.keys(byTool).sort(function(a,b){return PLOT_ORDER.indexOf(a)-PLOT_ORDER.indexOf(b);}).forEach(function(t){
     var pen=PENS.filter(function(p){return p.t===t;})[0];
     parts.push('<g id="'+t+'" data-tool="'+t+'" data-pen="'+pen.name+'" stroke="'+pen.hex+'" stroke-opacity="0.85" fill="none" stroke-linecap="round" stroke-linejoin="round">');
     var group=orderGroup(byTool[t]);
