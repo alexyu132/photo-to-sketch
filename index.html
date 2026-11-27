@@ -314,6 +314,11 @@
             Gaps in near-white
           </label>
         </div>
+        <div class="field">
+          <label for="stripeLight">Lightness <output id="stripeLightOut">0.6</output></label>
+          <input type="range" id="stripeLight" min="0.3" max="1" step="0.05" value="0.6" aria-label="Stripe lightness, 0.3 to 1" />
+          <p class="hint">Scales how dark each channel draws. Lower = lighter, less ink — the Multiply preview showed saturated colours coming out too dark, so 0.6 is the calibrated default. Turn it down for light or pastel photos.</p>
+        </div>
         <p class="hint">Stripes cycle cyan, magenta, yellow, black down the bed; each stripe&rsquo;s wiggle follows its own ink channel (amplitude + frequency). Yellow uses the lime pen &mdash; the set has no yellow.</p>
       </div>
 
@@ -717,6 +722,7 @@ $("waveLen").addEventListener("input",function(){$("waveLenOut").textContent=par
 $("stripeSpacing").addEventListener("input",function(){$("stripeSpacingOut").textContent=parseFloat($("stripeSpacing").value).toFixed(1)+" mm";});
 $("stripeAmp").addEventListener("input",function(){$("stripeAmpOut").textContent=parseFloat($("stripeAmp").value).toFixed(2)+" mm";});
 $("stripeLen").addEventListener("input",function(){$("stripeLenOut").textContent=parseFloat($("stripeLen").value).toFixed(1)+" mm";});
+$("stripeLight").addEventListener("input",function(){$("stripeLightOut").textContent=parseFloat($("stripeLight").value).toFixed(2);});
 /* ported-engine slider readouts */
 function bindRange(id,out,fmt){var el=$(id);var f=function(){$(out).textContent=fmt(parseFloat(el.value));};el.addEventListener("input",f);f();}
 bindRange("tspPoints","tspPointsOut",function(v){return Math.round(v).toLocaleString("en-US");});
@@ -996,7 +1002,7 @@ function mergeStrokes(list,tol){
 
 /* ============ Convert (automatic: on upload and on any control change) ============ */
 ["shadingSeg","waveOrientSeg","waveDriveSeg"].forEach(function(id){$(id).addEventListener("click",function(){if(state.img&&!state.busy)setTimeout(convert,30);});});
-["density","detail","dramatic","densityCap","brightness","contrast","saturation","flowSpacing","smooth","strokeLen","hatchAngle","waveSpacing","waveAmp","waveLen","waveCount","stripeSpacing","stripeAmp","stripeLen","stripeMod","stripeGaps","tspPoints","tspGamma","tspEdge","tspRelax","tspSmooth","colPoints","colPaper","colSat","stipRelax","stipPoints","stipGamma","stipR","spirPitch","spirMod","spirPaper","dithCell","dithDot"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
+["density","detail","dramatic","densityCap","brightness","contrast","saturation","flowSpacing","smooth","strokeLen","hatchAngle","waveSpacing","waveAmp","waveLen","waveCount","stripeSpacing","stripeAmp","stripeLen","stripeMod","stripeGaps","stripeLight","tspPoints","tspGamma","tspEdge","tspRelax","tspSmooth","colPoints","colPaper","colSat","stipRelax","stipPoints","stipGamma","stipR","spirPitch","spirMod","spirPaper","dithCell","dithDot"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
 ["fillWhite","colour","stipVary","colSmooth","adaptiveSmooth"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
 
 function convert(){
@@ -1490,10 +1496,11 @@ function runConvert(){
         }else if(ch===2){
           penHere=(Gb[idx]<Rb[idx]*(0.65+(dt-0.5)*0.2))?PENS[1]:PENS[4];
         }
+        var d2=d*(parseFloat($("stripeLight").value)||0.6); /* Lightness: scale channel darkness so the Multiply composite trends lighter. 0.6 is the calibrated default — saturated colours came out too dark at 1.0. */
         var ampF, freqF;
-        if(mod==="am"){ampF=ampFloor+(1-ampFloor)*Math.pow(d,0.75);freqF=freqMax;}
-        else if(mod==="fm"){ampF=1;freqF=freqFloor+(freqMax-freqFloor)*d;}
-        else{ampF=ampFloor+(1-ampFloor)*Math.pow(d,0.75);freqF=freqFloor+(freqMax-freqFloor)*d;}
+        if(mod==="am"){ampF=ampFloor+(1-ampFloor)*Math.pow(d2,0.75);freqF=freqMax;}
+        else if(mod==="fm"){ampF=1;freqF=freqFloor+(freqMax-freqFloor)*d2;}
+        else{ampF=ampFloor+(1-ampFloor)*Math.pow(d2,0.75);freqF=freqFloor+(freqMax-freqFloor)*d2;}
         var omega=2*Math.PI*freqF/lenPx; /* rad per image px */
         var off=ampPx*ampF*Math.sin(phase);
         var qx=base+off, qy=pos;
