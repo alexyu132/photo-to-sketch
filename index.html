@@ -1570,7 +1570,8 @@ function runConvert(){
           var omega=2*Math.PI*freqF/lenPx; /* rad per image px */
           var off=ampPx*ampF*Math.sin(phase);
           var qx=base+off, qy=pos;
-          if(gaps&&d<0.07){flushStripe();}
+          var gapTh=(ch===1)?0.20:0.07; /* M lifts sooner: violet/pink are dark, so a small M density speckles a pastel area where a small C/Y density is invisible */
+          if(gaps&&d<gapTh){flushStripe();}
           else if(qx<1||qy<1||qx>W-2||qy>H-2){flushStripe();}
           else{
             if(!ws.cur)ws.cur={pts:[],pen:penHere};
