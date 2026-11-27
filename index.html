@@ -472,6 +472,15 @@
       <h3 class="grouphead">Tone — every engine</h3>
 
       <div class="field">
+        <label for="penSet">Pen set</label>
+        <select id="penSet">
+          <option value="bic">BIC Cristal (8 pens)</option>
+          <option value="eyeye">EYEYE gel (8 pens)</option>
+        </select>
+        <p class="hint">The physical pens loaded in the plotter. EYEYE is more vivid and has a real orange and green.</p>
+      </div>
+
+      <div class="field">
         <label for="brightness">Brightness <output id="brightnessOut">0</output></label>
         <input type="range" id="brightness" min="-100" max="100" step="0.5" value="0" aria-label="Brightness, minus 100 to plus 100" />
       </div>
@@ -565,16 +574,35 @@
 <script>
 "use strict";
 /* ============ Pens: BIC Cristal Xtra Bold, sampled from caps ============ */
-var PENS=[
-  {t:"T0",name:"Black",hex:"#2c2d30"},
-  {t:"T1",name:"Red",hex:"#e42e2a"},
-  {t:"T2",name:"Pink",hex:"#c65a93"},
-  {t:"T3",name:"Sky blue",hex:"#08b1dc"},
-  {t:"T4",name:"Lime",hex:"#7bae44"},
-  {t:"T5",name:"Turquoise",hex:"#0497bd"},
-  {t:"T6",name:"Blue",hex:"#2d4e9e"},
-  {t:"T7",name:"Violet",hex:"#533c94"}
-];
+var PALETTES={
+  bic:[
+    {t:"T0",name:"Black",hex:"#2c2d30"},
+    {t:"T1",name:"Red",hex:"#e42e2a"},
+    {t:"T2",name:"Pink",hex:"#c65a93"},
+    {t:"T3",name:"Sky blue",hex:"#08b1dc"},
+    {t:"T4",name:"Lime",hex:"#7bae44"},
+    {t:"T5",name:"Turquoise",hex:"#0497bd"},
+    {t:"T6",name:"Blue",hex:"#2d4e9e"},
+    {t:"T7",name:"Violet",hex:"#533c94"}
+  ],
+  /* EYEYE gel pens, sampled from the user's swatch photo
+     (workspace/user/media_library/image/image-b0b95676.png). More vivid
+     than the BIC set, and it has a real orange and a real green — the
+     two hues the BIC set cannot make. T-slots match the plotter order:
+     T0 black, T1 red, T2 pink, T3 light blue, T4 green, T5 orange,
+     T6 blue, T7 purple. */
+  eyeye:[
+    {t:"T0",name:"Black",hex:"#111012"},
+    {t:"T1",name:"Red",hex:"#ad1b1d"},
+    {t:"T2",name:"Pink",hex:"#e33585"},
+    {t:"T3",name:"Light blue",hex:"#1b90d2"},
+    {t:"T4",name:"Green",hex:"#139248"},
+    {t:"T5",name:"Orange",hex:"#f37f31"},
+    {t:"T6",name:"Blue",hex:"#1147bc"},
+    {t:"T7",name:"Purple",hex:"#361b75"}
+  ]
+};
+var PENS=PALETTES.bic;
 function hexRgb(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
 function srgbToLin(c){c/=255;return c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4);}
 function rgbToOklab(r,g,b){
@@ -587,7 +615,10 @@ function rgbToOklab(r,g,b){
           1.9779984951*l-2.4285922050*m+0.4505937099*s,
           0.0259040371*l+0.7827717662*m-0.8086757660*s];
 }
-PENS.forEach(function(p){var c=hexRgb(p.hex);p.rgb=c;p.lab=rgbToOklab(c[0],c[1],c[2]);});
+function penHue(p){var c=p.rgb,mx=Math.max(c[0],c[1],c[2]),mn=Math.min(c[0],c[1],c[2]),dl=mx-mn;if(dl===0)return 0;var h;if(mx===c[0])h=60*(((c[1]-c[2])/dl)%6);else if(mx===c[1])h=60*((c[2]-c[0])/dl+2);else h=60*((c[0]-c[1])/dl+4);if(h<0)h+=360;return h;}
+function setupPens(list){list.forEach(function(p){var c=hexRgb(p.hex);p.rgb=c;p.lab=rgbToOklab(c[0],c[1],c[2]);p.hue=penHue(p);});}
+setupPens(PALETTES.bic);setupPens(PALETTES.eyeye);
+function setPenSet(name){PENS=PALETTES[name]||PALETTES.bic;}
 /* BIC Cristal datasheet line width: the 1.6 mm figure is the ball diameter,
    the drawn line is 0.42 mm. All spacing below derives from this w. */
 var LINE_W=0.42;
@@ -1004,6 +1035,7 @@ function mergeStrokes(list,tol){
 ["shadingSeg","waveOrientSeg","waveDriveSeg"].forEach(function(id){$(id).addEventListener("click",function(){if(state.img&&!state.busy)setTimeout(convert,30);});});
 ["density","detail","dramatic","densityCap","brightness","contrast","saturation","flowSpacing","smooth","strokeLen","hatchAngle","waveSpacing","waveAmp","waveLen","waveCount","stripeSpacing","stripeAmp","stripeLen","stripeMod","stripeGaps","stripeLight","tspPoints","tspGamma","tspEdge","tspRelax","tspSmooth","colPoints","colPaper","colSat","stipRelax","stipPoints","stipGamma","stipR","spirPitch","spirMod","spirPaper","dithCell","dithDot"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
 ["fillWhite","colour","stipVary","colSmooth","adaptiveSmooth"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
+$("penSet").addEventListener("change",function(){setPenSet($("penSet").value);if(state.img&&!state.busy)convert();});
 
 function convert(){
   if(!state.img||state.busy)return;
@@ -1406,43 +1438,59 @@ function runConvert(){
     var Rf=new Float32Array(N),Gf=new Float32Array(N),Bf=new Float32Array(N),i;
     for(i=0;i<N;i++){Rf[i]=R[i];Gf[i]=G[i];Bf[i]=B[i];}
     var Rb=gaussBlur(Rf,W,H,1.8),Gb=gaussBlur(Gf,W,H,1.8),Bb=gaussBlur(Bf,W,H,1.8);
-    /* per-channel ink darkness in linear light, plus black = the common ink.
-       Gray component replacement: the neutral part (K) is taken out of
-       C/M/Y, so a grey area is carried by the black stripe alone instead
-       of all four stripes at once — otherwise every muted area prints
-       full cyan + magenta + yellow + black and reads as muddy monochrome.
-       Magenta is strengthened where yellow is also present (red/orange
-       areas), so pink stays dense there. Each channel's pen is
-       hue-dependent (see the pen switch in the scanner below): the
-       stripe uses whichever pen basically matches the local colour
-       instead of always blending the CMYK pens — cyan stripes pick
-       sky, turquoise or blue; magenta stripes pick pink or violet;
-       yellow stripes pick red (warm areas) or lime. Pure yellows (no
-       magenta) and blues (no yellow) are untouched, and neutrals are
-       unchanged. */
-    var chanDark=[new Float32Array(N),new Float32Array(N),new Float32Array(N),new Float32Array(N)];
+    /* Spot-colour stripes: each stripe uses the ONE pen that matches the
+       local colour, instead of the CMYK process mix. The blue pen IS
+       blue, so a blue area draws blue stripes — not a blue stripe plus
+       a violet stripe multiplied into muddy purple. The old CMYK cycle
+       made every vivid colour a blend of two pens plus white paper,
+       which is why the swatch grid came back grey and desaturated
+       (mean dE00 23.4). Suppressing the extra channel did not work —
+       it cut the ink coverage, so more white showed through and dE
+       got worse (26.1). The fix is to use the matching pen for ALL
+       the stripes in an area, so coverage stays full and the hue stays
+       pure. inkNeed is how much ink the local colour wants (the max
+       channel darkness after GCR — high for vivid and dark colours,
+       zero for white); spotPen is the pen whose hue is closest to the
+       local hue, black for neutrals. */
+    var inkNeed=new Float32Array(N),spotPen=new Uint8Array(N),i;
     for(i=0;i<N;i++){
       var cd=1-srgbToLin(Rb[i]),md=1-srgbToLin(Gb[i]),yd=1-srgbToLin(Bb[i]);
       var k=Math.min(cd,md,yd);
       var c2=cd-k,m2=md-k,y2=yd-k;
-      chanDark[0][i]=c2;
-      chanDark[1][i]=Math.min(1,m2*(1+0.8*y2));
-      chanDark[2][i]=y2;
-      chanDark[3][i]=k;
+      inkNeed[i]=Math.max(c2,m2,y2,k);
+      var sR=Rb[i],sG=Gb[i],sB=Bb[i];
+      var mx=Math.max(sR,sG,sB),mn=Math.min(sR,sG,sB),dl=mx-mn;
+      if(dl<0.02||mx===0){spotPen[i]=0;continue;}
+      var sat=dl/mx;
+      if(sat<0.25){spotPen[i]=0;continue;} /* neutral: black carries it */
+      var hue;
+      if(mx===sR)hue=60*(((sG-sB)/dl)%6);
+      else if(mx===sG)hue=60*((sB-sR)/dl+2);
+      else hue=60*((sR-sG)/dl+4);
+      if(hue<0)hue+=360;
+      /* Nearest chromatic pen by hue in the active palette (black is
+         handled above for neutrals). Works for both palettes: BIC has
+         no orange so orange falls to red, EYEYE has a real orange and
+         a real green. Ties (BIC sky/turquoise share a hue) go to the
+         first pen. */
+      var best=1,bd=1e9;
+      for(var pi=1;pi<8;pi++){
+        var dh=Math.abs(hue-PENS[pi].hue);
+        if(dh>180)dh=360-dh;
+        if(dh<bd){bd=dh;best=pi;}
+      }
+      spotPen[i]=best;
     }
-    var stripePens=[PENS[3],PENS[2],PENS[4],PENS[0]]; /* defaults: T3 sky=cyan, T2 pink=magenta, T4 lime=yellow, T0 black — C, M and Y are hue-dependent per sample (see below) */
     /* Per-hue lightness compensation, calibrated on a full-saturation
-       rainbow: the Multiply composite comes out far too dark in the
-       green/cyan/yellow hues (two channels both dense there) and about
-       right in red/violet/blue. Measured luminance ratio (preview /
-       original) per 10° hue band; the table is the Lightness each hue
-       needs divided by the 0.6 default, refined once by re-measuring
-       after the first pass and damping the correction 50% (so it
-       converges instead of overshooting). 36 entries at 10° steps,
-       linearly interpolated; low-saturation pixels blend toward 1.0
-       (no compensation) since their hue is meaningless and the K
-       channel carries them. First pass: mean ratio 0.73 → 0.92, mean
-       abs deviation 0.37 → 0.24. */
+       rainbow: the composite comes out far too dark in the
+       green/cyan/yellow hues and about right in red/violet/blue.
+       Measured luminance ratio (preview / original) per 10° hue band;
+       the table is the Lightness each hue needs divided by the 0.6
+       default, refined once by re-measuring after the first pass and
+       damping the correction 50%. 36 entries at 10° steps, linearly
+       interpolated; low-saturation pixels blend toward 1.0 (no
+       compensation) since their hue is meaningless and the K channel
+       carries them. */
     var HUE_COMP=[0.79,0.76,0.67,0.57,0.47,0.39,0.33,0.30,0.28,0.28,0.28,0.28,0.28,0.27,0.27,0.27,0.30,0.33,0.39,0.48,0.57,0.66,0.78,0.88,0.96,1.00,1.00,0.97,0.92,0.85,0.81,0.90,0.95,0.91,0.87,0.83];
     function hueCompAt(r,g,b){
       var mx=Math.max(r,g,b),mn=Math.min(r,g,b),dl=mx-mn;
@@ -1457,20 +1505,6 @@ function runConvert(){
       var sat=dl/(mx||1);
       return 1+(c-1)*Math.min(1,sat*1.5);
     }
-    /* Ordered (Bayer) dither for the pen switches. A hard hue threshold
-       makes a visible band edge where one pen gives way to the next.
-       Adding a small spatially-varying offset to the threshold makes
-       the two pens interleave across a narrow zone instead, which the
-       eye reads as a smooth blend. The dither is two-dimensional but
-       coarse — the Bayer cell is 16 image px across — so a stripe
-       near a boundary flips pens every ~16 px instead of every 4 px:
-       a fine 4 px dither made the coral photo explode from 930 to
-       4,626 paths, and a per-stripe dither (constant along a stripe)
-       did not visibly soften the bands at all. Deterministic (same
-       pixel always gets the same value), so the output is
-       reproducible, and it only matters near a threshold — flat colour
-       areas are unaffected. */
-    var BAYER=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5];
     /* selfie-squiggle rule: the wave never stops unless Gaps in near-white
        is on — white areas get a low, slow baseline wave (15% amplitude,
        25% frequency) instead of a gap, so every stripe is one continuous
@@ -1480,49 +1514,28 @@ function runConvert(){
     var ampFloor=0.15, freqFloor=0.25, freqMax=8; /* darkest areas run at 8x the base frequency, so the min wavelength is Wavelength/8 */
     var maxPhaseStep=Math.PI/4;
     var mod=($("stripeMod")&&$("stripeMod").value)||"both"; /* both = AM+FM, am = amplitude only, fm = frequency only */
-    var gaps=$("stripeGaps")&&$("stripeGaps").checked; /* lift where this stripe's channel is truly close to white */
+    var gaps=$("stripeGaps")&&$("stripeGaps").checked; /* lift where this stripe's ink need is truly close to white */
     var ws={cur:null,segs:[]};
     function flushStripe(){if(ws.cur&&ws.cur.pts.length>2)ws.segs.push(ws.cur);ws.cur=null;}
     var stripeIdx=0;
     for(var base=spacingPx*0.5;base<W-1;base+=spacingPx,stripeIdx++){
       var phase=0;
       ws.cur=null;ws.segs=[];
-      var ch=stripeIdx%4;
-      var pen=stripePens[ch];
-      var cdark=chanDark[ch];
       var pos=0;
       while(true){
         var yi=Math.min(H-1,Math.max(0,Math.round(pos)));
         var xi=Math.min(W-1,Math.max(0,Math.round(base)));
         var idx=yi*W+xi;
-        var d=Math.min(1,Math.max(0,cdark[idx]));
-        /* Each channel's pen is hue-dependent: the stripe uses whichever
-           pen basically matches the local colour instead of always
-           blending the CMYK pens. Cyan: blue where B clearly dominates
-           G and R (pure/royal blue), turquoise where G and B are both
-           strong and R is low (teal), otherwise sky — so blues and
-           teals read as themselves instead of a sky-plus-pink blend.
-           Magenta: violet where the colour is a blue-leaning purple
-           (B high, G low, B at least ~R), otherwise pink — so purples
-           read purple instead of magenta. Yellow: red in warm (reddish)
-           areas (G clearly below R), otherwise lime. The segment is
-           flushed and restarted whenever the pen changes, so a stripe
-           can switch pens as it crosses from one colour into another.
-           Each threshold is dithered by the Bayer value at this pixel
-           (16 px cell), so near a boundary the two pens interleave
-           instead of switching all at once — the band edge becomes
-           a blend. */
-        var penHere=pen;
-        var dt=(BAYER[((yi>>2)&3)*4+((xi>>2)&3)]+0.5)/16; /* coarse 2D dither, 0..1 */
-        if(ch===0){
-          if(Bb[idx]>Gb[idx]*(1.4+(dt-0.5)*0.4)&&Bb[idx]>Rb[idx]*1.5)penHere=PENS[6];
-          else if(Gb[idx]>Bb[idx]*(0.75+(dt-0.5)*0.2)&&Rb[idx]<0.55*Bb[idx]&&Gb[idx]>Rb[idx]*1.5)penHere=PENS[5];
-        }else if(ch===1){
-          if(Bb[idx]>Gb[idx]*(1.3+(dt-0.5)*0.4)&&Bb[idx]>=Rb[idx]*0.9&&Gb[idx]<0.7*Bb[idx])penHere=PENS[7];
-        }else if(ch===2){
-          penHere=(Gb[idx]<Rb[idx]*(0.65+(dt-0.5)*0.2))?PENS[1]:PENS[4];
-        }
-        var d2=d*(parseFloat($("stripeLight").value)||0.6)*hueCompAt(Rb[idx],Gb[idx],Bb[idx]); /* Lightness: scale channel darkness so the Multiply composite trends lighter. 0.6 is the calibrated default — saturated colours came out too dark at 1.0. hueCompAt adds the per-hue compensation (greens/cyans need much less ink than reds/violets). */
+        /* Spot colour: the stripe uses the one pen that matches the
+           local colour (precomputed in spotPen), and the wave is
+           driven by how much ink that colour wants (inkNeed). No
+           channel cycle, no CMYK blending — a blue area is all blue
+           pen, a red area all red pen. The segment is flushed and
+           restarted whenever the pen changes, so a stripe can switch
+           pens as it crosses from one colour into another. */
+        var d=Math.min(1,Math.max(0,inkNeed[idx]));
+        var penHere=PENS[spotPen[idx]];
+        var d2=d*(parseFloat($("stripeLight").value)||0.6)*hueCompAt(Rb[idx],Gb[idx],Bb[idx]); /* Lightness: scale ink need so the composite trends lighter. 0.6 is the calibrated default — saturated colours came out too dark at 1.0. hueCompAt adds the per-hue compensation (greens/cyans need much less ink than reds/violets). */
         var ampF, freqF;
         if(mod==="am"){ampF=ampFloor+(1-ampFloor)*Math.pow(d2,0.75);freqF=freqMax;}
         else if(mod==="fm"){ampF=1;freqF=freqFloor+(freqMax-freqFloor)*d2;}
@@ -2429,6 +2442,7 @@ function loadSettings(){
     if(b)b.click();
   });
   if(s.view==="sketch"||s.view==="orig")setView(s.view);
+  if(s.penSet)setPenSet(s.penSet);
   syncDensity();syncFlowSpacing();
 }
 /* save on any settings change, on segmented picks, and on view switches */
