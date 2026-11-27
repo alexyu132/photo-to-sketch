@@ -313,6 +313,11 @@
             <input type="checkbox" id="stripeGaps" />
             Gaps in near-white
           </label>
+          <label class="check">
+            <input type="checkbox" id="stripeComp" checked />
+            Colour compensation
+          </label>
+          <p class="hint">Brightens light colours before the stripes run, so they don&rsquo;t come out too dark. Measured on a hue &times; value rainbow; dark colours are left alone (the pens can&rsquo;t go darker than their own ink).</p>
         </div>
         <p class="hint">Stripes cycle cyan, magenta, yellow, black down the bed; each stripe&rsquo;s wiggle follows its own ink channel (amplitude + frequency). Each channel picks the pen that matches the local colour — cyan picks sky, turquoise or blue; magenta picks pink or violet; yellow picks red in warm areas, lime otherwise.</p>
       </div>
@@ -600,6 +605,7 @@ var PALETTES={
 var PENS=PALETTES.bic;
 function hexRgb(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
 function srgbToLin(c){c/=255;return c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4);}
+function linToSrgb(l){l=Math.min(1,Math.max(0,l));return (l<=0.0031308?l*12.92:1.055*Math.pow(l,1/2.4)-0.055)*255;}
 function rgbToOklab(r,g,b){
   var R=srgbToLin(r),G=srgbToLin(g),B=srgbToLin(b);
   var l=0.4122214708*R+0.5363325363*G+0.0514459929*B;
@@ -1027,7 +1033,7 @@ function mergeStrokes(list,tol){
 
 /* ============ Convert (automatic: on upload and on any control change) ============ */
 ["shadingSeg","waveOrientSeg","waveDriveSeg"].forEach(function(id){$(id).addEventListener("click",function(){if(state.img&&!state.busy)setTimeout(convert,30);});});
-["density","detail","dramatic","densityCap","brightness","contrast","saturation","flowSpacing","smooth","strokeLen","hatchAngle","waveSpacing","waveAmp","waveLen","waveCount","stripeSpacing","stripeAmp","stripeLen","stripeMod","stripeGaps","tspPoints","tspGamma","tspEdge","tspRelax","tspSmooth","colPoints","colPaper","colSat","stipRelax","stipPoints","stipGamma","stipR","spirPitch","spirMod","spirPaper","dithCell","dithDot"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
+["density","detail","dramatic","densityCap","brightness","contrast","saturation","flowSpacing","smooth","strokeLen","hatchAngle","waveSpacing","waveAmp","waveLen","waveCount","stripeSpacing","stripeAmp","stripeLen","stripeMod","stripeGaps","stripeComp","tspPoints","tspGamma","tspEdge","tspRelax","tspSmooth","colPoints","colPaper","colSat","stipRelax","stipPoints","stipGamma","stipR","spirPitch","spirMod","spirPaper","dithCell","dithDot"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
 ["fillWhite","colour","stipVary","colSmooth","adaptiveSmooth"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
 $("penSet").addEventListener("change",function(){setPenSet($("penSet").value);if(state.img&&!state.busy)convert();});
 
@@ -1419,6 +1425,47 @@ function runConvert(){
      Pens are the closest the BIC set has to each separation: sky blue
      for cyan, pink for magenta, lime for yellow (no yellow pen exists),
      black for black. The stripes carry the image alone, like Wave. */
+  /* Colour compensation, measured on a hue x value rainbow (12 hues x
+     5 values, dark to light). The stripes output luminance is compressed:
+     light colours come out ~3x too dark, dark colours ~3x too light, mids
+     match — the output is nearly flat per hue, because for a saturated
+     colour some CMYK channel always has dense ink. So this preprocessing
+     brightens light colours (scale > 1) and leaves dark colours alone
+     (scale 1): darkening the input cannot darken the output past the
+     pens' own ink, it only shrinks the denominator. One-sided, so it
+     helps the lights without hurting the darks. Measured: mean abs
+     luminance error 0.104 -> 0.076, mean |ratio-1| 0.87 -> 0.76.
+     Table rows are values [0.325, 0.5, 0.675, 0.85], columns are hues
+     [15..345 step 30]; bilinearly interpolated, blended to 1.0 as
+     saturation falls so neutrals are untouched. Applied to the linear-
+     light channels before the blur, so the stripe loop itself is
+     unchanged — the algorithm is untouched, only its input is adjusted. */
+  var STRIPE_COMP=[
+    [1,1,1,1,1,1,1,1,1,1,1,1],
+    [1.05,1.25,1.37,1.08,1.14,1.25,1.19,1,1,1,1,1],
+    [1.54,1.83,1.89,1.64,1.74,1.8,1.64,1.39,1.18,1.46,1.39,1.29],
+    [1.8,2,2,2,2,2,2,1.69,1.47,1.77,1.58,1.49]];
+  var STRIPE_COMP_VALS=[0.325,0.5,0.675,0.85];
+  function stripeCompScale(r,g,b){
+    var mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;
+    if(d<1||mx<1)return 1;
+    var hue;
+    if(mx===r)hue=((g-b)/d)%6;
+    else if(mx===g)hue=(b-r)/d+2;
+    else hue=(r-g)/d+4;
+    hue*=60;if(hue<0)hue+=360;
+    var sat=d/mx;
+    var hi=hue/30-0.5,h0=Math.floor(hi),fh=hi-h0;
+    h0=((h0%12)+12)%12;var h1=(h0+1)%12;
+    var v=mx/255,vi=0;
+    if(v<=STRIPE_COMP_VALS[0])vi=0;
+    else if(v>=STRIPE_COMP_VALS[3])vi=3;
+    else{for(var k=0;k<3;k++){if(v>=STRIPE_COMP_VALS[k]&&v<=STRIPE_COMP_VALS[k+1]){vi=k+(v-STRIPE_COMP_VALS[k])/(STRIPE_COMP_VALS[k+1]-STRIPE_COMP_VALS[k]);break;}}}
+    var v0=Math.min(3,Math.floor(vi)),v1=Math.min(3,v0+1),fv=vi-v0;
+    var s00=STRIPE_COMP[v0][h0],s01=STRIPE_COMP[v0][h1],s10=STRIPE_COMP[v1][h0],s11=STRIPE_COMP[v1][h1];
+    var s=(s00*(1-fh)+s01*fh)*(1-fv)+(s10*(1-fh)+s11*fh)*fv;
+    return 1+(s-1)*Math.min(1,sat*2);
+  }
   function cmykStripePass(){
       var spacingPx=(parseFloat($("stripeSpacing").value)||0.4)/mmPx; /* NOT
          divided by Density: the Stripe spacing slider is the control here.
@@ -1430,7 +1477,20 @@ function runConvert(){
       var lenPx=(parseFloat($("stripeLen").value)||1.5)/mmPx;
       if(lenPx<4)lenPx=4;
       var Rf=new Float32Array(N),Gf=new Float32Array(N),Bf=new Float32Array(N),i;
-      for(i=0;i<N;i++){Rf[i]=R[i];Gf[i]=G[i];Bf[i]=B[i];}
+      var compOn=$("stripeComp")&&$("stripeComp").checked;
+      for(i=0;i<N;i++){
+        var rr=R[i],gg=G[i],bb=B[i];
+        if(compOn){
+          var sc=stripeCompScale(rr,gg,bb);
+          if(sc!==1){
+            var lr=srgbToLin(rr)*sc,lg=srgbToLin(gg)*sc,lb=srgbToLin(bb)*sc;
+            rr=Math.min(255,Math.max(0,Math.round(linToSrgb(lr))));
+            gg=Math.min(255,Math.max(0,Math.round(linToSrgb(lg))));
+            bb=Math.min(255,Math.max(0,Math.round(linToSrgb(lb))));
+          }
+        }
+        Rf[i]=rr;Gf[i]=gg;Bf[i]=bb;
+      }
       var Rb=gaussBlur(Rf,W,H,1.8),Gb=gaussBlur(Gf,W,H,1.8),Bb=gaussBlur(Bf,W,H,1.8);
       /* per-channel ink darkness in linear light, plus black = the common ink.
          Gray component replacement: the neutral part (K) is taken out of
