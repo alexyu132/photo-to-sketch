@@ -455,7 +455,7 @@
         <p class="hint">Boosts colour before separation, so hues read stronger.</p>
       </div>
 
-      <div class="field">
+      <div class="field" id="dramaticField">
         <label for="dramatic">Dramatic <output id="dramaticOut">35</output></label>
         <input type="range" id="dramatic" min="0" max="100" step="0.5" value="35" />
         <p class="hint">Higher pushes midtones darker.</p>
@@ -652,6 +652,14 @@ bindSeg("shadingSeg",function(v){
   $("densityField").style.display=noShade?"none":"";
   $("capField").style.display=noShade?"none":"";
   $("shadingAmountHead").style.display=noShade?"none":"";
+  /* Dramatic feeds the luminance tone pipeline (dark/darkNC), which the
+     ported engines do use — but Wave stripes reads the RGB channels
+     directly and never touches that pipeline, so the slider is dead
+     there (verified: the coral SVG is byte-identical at Dramatic 0 vs
+     100). Hide it for Wave stripes and for Off, where there is no
+     shading at all. */
+  var noDramatic=(v==="off"||v==="cmykstripes");
+  $("dramaticField").style.display=noDramatic?"none":"";
   /* Wave stripes is a complete drawing on its own, and so are the
      ported engines — contours would just clutter them */
   var noContour=(v==="cmykstripes"||!!PORTED[v]);
