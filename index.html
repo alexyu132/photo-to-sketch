@@ -1527,26 +1527,62 @@ function runConvert(){
           var d=Math.min(1,Math.max(0,cdark[idx]));
           /* Each channel's pen is hue-dependent: the stripe uses whichever
              pen basically matches the local colour instead of always
-             blending the CMYK pens. Cyan: blue where B clearly dominates
-             G and R (pure/royal blue), turquoise where G and B are both
-             strong and R is low (teal — R/B bar 0.65 so light pastel cyans like a sky qualify), otherwise sky — so blues and
-             teals read as themselves instead of a sky-plus-pink blend.
-             Magenta: whichever magenta-family pen (pink or violet) is
-             closest to the pixel's hue — blue skies get violet, reds get
-             pink — so a light blue does not draw in pink and turn
-             purple. Yellow: red in warm (reddish) areas (G clearly below
-             R), otherwise lime. The segment is flushed and restarted
-             whenever the pen changes, so a stripe can switch pens as it
-             crosses from one colour into another. Each threshold is
-             dithered by the Bayer value at this pixel (16 px cell), so
-             near a boundary the two pens interleave instead of switching
-             all at once — the band edge becomes a blend. */
+             blending the CMYK pens. Cyan: whichever chromatic pen is
+             closest to the pixel's hue — yellow-greens draw in lime,
+             cyans in turquoise, blues in sky/blue — so a hue is not
+             forced into a cyan pen that does not belong there. Magenta:
+             whichever magenta-family pen (pink or violet) is closest to
+             the pixel's hue — blue skies get violet, reds get pink — so
+             a light blue does not draw in pink and turn purple. Yellow:
+             red in warm (reddish) areas (G clearly below R), otherwise
+             lime. The segment is flushed and restarted whenever the pen
+             changes, so a stripe can switch pens as it crosses from one
+             colour into another. Each threshold is dithered by the Bayer
+             value at this pixel (16 px cell), so near a boundary the two
+             pens interleave instead of switching all at once — the band
+             edge becomes a blend. */
           var penHere=pen;
           var dt=(BAYER[((yi>>2)&3)*4+((xi>>2)&3)]+0.5)/16; /* coarse 2D dither, 0..1 */
           if(mono)penHere=PENS[0];
           else if(ch===0){
-            if(Bb[idx]>Gb[idx]*(1.4+(dt-0.5)*0.4)&&Bb[idx]>Rb[idx]*1.5)penHere=penByHue(235);
-            else if(Gb[idx]>Bb[idx]*(0.75+(dt-0.5)*0.2)&&Rb[idx]<0.65*Bb[idx]&&Gb[idx]>Rb[idx]*1.5)penHere=penByHue(190);
+            /* Cyan pen by pixel hue: pick the chromatic pen closest to
+               the pixel's own hue, the same principle M and Y already
+               use. The old threshold logic forced a cyan pen (turquoise)
+               into yellow-greens, where no cyan pen belongs — the dark
+               turquoise overpowered the lime and the hue read cyan. A
+               yellow-green now draws in lime, a cyan in turquoise, a
+               blue in sky/blue. The Bayer dither offsets the hue by
+               +/-10 deg near a crossover so pens interleave. */
+            var mx0=Math.max(Rb[idx],Gb[idx],Bb[idx]),mn0=Math.min(Rb[idx],Gb[idx],Bb[idx]),dd0=mx0-mn0;
+            if(dd0>1){
+              var ph0;
+              if(mx0===Rb[idx])ph0=((Gb[idx]-Bb[idx])/dd0)%6;
+              else if(mx0===Gb[idx])ph0=(Bb[idx]-Rb[idx])/dd0+2;
+              else ph0=(Rb[idx]-Gb[idx])/dd0+4;
+              ph0*=60;if(ph0<0)ph0+=360;
+              ph0+=(dt-0.5)*20;
+              /* Cool pens only: hue 60..300 deg (lime, turquoise, sky,
+                 blue, violet). Red and pink are warm and must never be
+                 the C pen — they stack red on top of the Y channel's
+                 red and the M channel's pink and the reds read heavy. */
+              penHere=null;var bestD=1e9;
+              for(var pi=0;pi<PENS.length;pi++){var pp=PENS[pi];if(pp.hue===undefined)continue;
+                var hh=pp.hue;if(hh<60||hh>300)continue;
+                var dd=Math.abs(hh-ph0);dd=Math.min(dd,360-dd);
+                if(dd<bestD){bestD=dd;penHere=pp;}}
+              if(!penHere)penHere=penByHue(ph0);
+              /* Hysteresis: do not switch pens for a marginal hue gain.
+                 If the segment is already drawing in a pen, keep it
+                 unless the new pen is at least 15 deg closer to the
+                 pixel hue — otherwise hue gradients make the stripe
+                 switch pens every few samples and the path count
+                 explodes (Pyramid 2,565 -> 7,282 paths). */
+              if(ws.cur&&ws.cur.pen&&ws.cur.pen!==penHere&&ws.cur.pen.hue!==undefined){
+                var dNew=Math.abs(penHere.hue-ph0);dNew=Math.min(dNew,360-dNew);
+                var dCur=Math.abs(ws.cur.pen.hue-ph0);dCur=Math.min(dCur,360-dCur);
+                if(dCur-dNew<15)penHere=ws.cur.pen;
+              }
+            }
           }else if(ch===1){
             /* Magenta pen by hue: pick whichever magenta-family pen
                (pink T2 or violet T7) is closest to the pixel's hue, so
