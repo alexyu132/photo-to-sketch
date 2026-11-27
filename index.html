@@ -1373,6 +1373,21 @@ function runConvert(){
         chanDark[2][i]=y2;
         chanDark[3][i]=k;
       }
+      /* Pen picks below are by HUE, not by slot: the two pen sets put
+         different colours in the same slots (EYEYE T5 is orange where
+         BIC T5 is turquoise), so a hardcoded PENS[5] draws cyan in
+         orange. This helper returns the chromatic pen in the active
+         set whose hue is closest to the target. */
+      function penByHue(target){
+        var best=null,bd=1e9;
+        for(var q=0;q<PENS.length;q++){
+          var p=PENS[q];
+          if(p===PENS[0])continue; /* never pick black for a hue */
+          var dh=Math.abs(p.hue-target);dh=Math.min(dh,360-dh);
+          if(dh<bd){bd=dh;best=p;}
+        }
+        return best||PENS[3];
+      }
       var stripePens=[PENS[3],PENS[2],PENS[4],PENS[0]]; /* defaults: T3 sky=cyan, T2 pink=magenta, T4 lime=yellow, T0 black — C, M and Y are hue-dependent per sample (see below) */
       /* Ordered (Bayer) dither for the pen switches. A hard hue threshold
          makes a visible band edge where one pen gives way to the next.
@@ -1433,12 +1448,12 @@ function runConvert(){
           var dt=(BAYER[((yi>>2)&3)*4+((xi>>2)&3)]+0.5)/16; /* coarse 2D dither, 0..1 */
           if(mono)penHere=PENS[0];
           else if(ch===0){
-            if(Bb[idx]>Gb[idx]*(1.4+(dt-0.5)*0.4)&&Bb[idx]>Rb[idx]*1.5)penHere=PENS[6];
-            else if(Gb[idx]>Bb[idx]*(0.75+(dt-0.5)*0.2)&&Rb[idx]<0.55*Bb[idx]&&Gb[idx]>Rb[idx]*1.5)penHere=PENS[5];
+            if(Bb[idx]>Gb[idx]*(1.4+(dt-0.5)*0.4)&&Bb[idx]>Rb[idx]*1.5)penHere=penByHue(235);
+            else if(Gb[idx]>Bb[idx]*(0.75+(dt-0.5)*0.2)&&Rb[idx]<0.55*Bb[idx]&&Gb[idx]>Rb[idx]*1.5)penHere=penByHue(190);
           }else if(ch===1){
-            if(Bb[idx]>Gb[idx]*(1.3+(dt-0.5)*0.4)&&Bb[idx]>=Rb[idx]*0.9&&Gb[idx]<0.7*Bb[idx])penHere=PENS[7];
+            if(Bb[idx]>Gb[idx]*(1.3+(dt-0.5)*0.4)&&Bb[idx]>=Rb[idx]*0.9&&Gb[idx]<0.7*Bb[idx])penHere=penByHue(265);
           }else if(ch===2){
-            penHere=(Gb[idx]<Rb[idx]*(0.65+(dt-0.5)*0.2))?PENS[1]:PENS[4];
+            penHere=(Gb[idx]<Rb[idx]*(0.65+(dt-0.5)*0.2))?penByHue(5):penByHue(120);
           }
           var ampF, freqF;
           if(mod==="am"){ampF=ampFloor+(1-ampFloor)*Math.pow(d,0.75);freqF=freqMax;}
