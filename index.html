@@ -1503,16 +1503,16 @@ function runConvert(){
              G and R (pure/royal blue), turquoise where G and B are both
              strong and R is low (teal), otherwise sky — so blues and
              teals read as themselves instead of a sky-plus-pink blend.
-             Magenta: violet where the colour is a blue-leaning purple
-             (B high, G low, B at least ~R), otherwise pink — so purples
-             read purple instead of magenta. Yellow: red in warm (reddish)
-             areas (G clearly below R), otherwise lime. The segment is
-             flushed and restarted whenever the pen changes, so a stripe
-             can switch pens as it crosses from one colour into another.
-             Each threshold is dithered by the Bayer value at this pixel
-             (16 px cell), so near a boundary the two pens interleave
-             instead of switching all at once — the band edge becomes
-             a blend. */
+             Magenta: whichever magenta-family pen (pink or violet) is
+             closest to the pixel's hue — blue skies get violet, reds get
+             pink — so a light blue does not draw in pink and turn
+             purple. Yellow: red in warm (reddish) areas (G clearly below
+             R), otherwise lime. The segment is flushed and restarted
+             whenever the pen changes, so a stripe can switch pens as it
+             crosses from one colour into another. Each threshold is
+             dithered by the Bayer value at this pixel (16 px cell), so
+             near a boundary the two pens interleave instead of switching
+             all at once — the band edge becomes a blend. */
           var penHere=pen;
           var dt=(BAYER[((yi>>2)&3)*4+((xi>>2)&3)]+0.5)/16; /* coarse 2D dither, 0..1 */
           if(mono)penHere=PENS[0];
@@ -1520,7 +1520,28 @@ function runConvert(){
             if(Bb[idx]>Gb[idx]*(1.4+(dt-0.5)*0.4)&&Bb[idx]>Rb[idx]*1.5)penHere=penByHue(235);
             else if(Gb[idx]>Bb[idx]*(0.75+(dt-0.5)*0.2)&&Rb[idx]<0.55*Bb[idx]&&Gb[idx]>Rb[idx]*1.5)penHere=penByHue(190);
           }else if(ch===1){
-            if(Bb[idx]>Gb[idx]*(1.3+(dt-0.5)*0.4)&&Bb[idx]>=Rb[idx]*0.9&&Gb[idx]<0.7*Bb[idx])penHere=penByHue(265);
+            /* Magenta pen by hue: pick whichever magenta-family pen
+               (pink T2 or violet T7) is closest to the pixel's hue, so
+               blue skies get violet (blue-leaning) and reds get pink
+               (red-leaning). The old fixed threshold (B >> G) left light
+               blues drawing in pink — pink is the most saturated pen in
+               the set, so even a small amount turned the sky purple. The
+               Bayer dither offsets the hue by +/-10 deg near the
+               crossover so the two pens interleave instead of switching
+               all at once. */
+            var mx2=Math.max(Rb[idx],Gb[idx],Bb[idx]),mn2=Math.min(Rb[idx],Gb[idx],Bb[idx]),dd2=mx2-mn2;
+            if(dd2>1){
+              var ph;
+              if(mx2===Rb[idx])ph=((Gb[idx]-Bb[idx])/dd2)%6;
+              else if(mx2===Gb[idx])ph=(Bb[idx]-Rb[idx])/dd2+2;
+              else ph=(Rb[idx]-Gb[idx])/dd2+4;
+              ph*=60;if(ph<0)ph+=360;
+              ph+=(dt-0.5)*20;
+              var p2=PENS[2],p7=PENS[7];
+              var d2=Math.abs(p2.hue-ph);d2=Math.min(d2,360-d2);
+              var d7=Math.abs(p7.hue-ph);d7=Math.min(d7,360-d7);
+              if(d7<d2)penHere=p7;
+            }
           }else if(ch===2){
             penHere=(Gb[idx]<Rb[idx]*(0.65+(dt-0.5)*0.2))?penByHue(5):penByHue(120);
           }
