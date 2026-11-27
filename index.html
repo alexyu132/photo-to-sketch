@@ -534,15 +534,26 @@
 "use strict";
 /* ============ Pens: BIC Cristal Xtra Bold, sampled from caps ============ */
 var PALETTES={
+  /* BIC Cristal Xtra Bold. `hex` is the pen's opaque cap colour — it is
+     what the SVG carries, so the colour-plotter import matches it to the
+     right pen. `previewHex` is the colour a single translucent layer of
+     that pen actually plots on paper, measured from the user's ASC
+     overlap-strip photo (2026-11-27, white-balanced against the paper,
+     coverage-corrected for the 0.42mm lines at 0.5mm spacing): the inks
+     are far lighter and less saturated than the cap colours, because a
+     single layer is translucent. The in-browser preview uses previewHex
+     so it predicts the real plot; the exported SVG keeps hex so the
+     import still matches. EYEYE has no previewHex yet — it has not been
+     physically plotted, so it still previews in its cap colours. */
   bic:[
-    {t:"T0",name:"Black",hex:"#2c2d30"},
-    {t:"T1",name:"Red",hex:"#e42e2a"},
-    {t:"T2",name:"Pink",hex:"#c65a93"},
-    {t:"T3",name:"Sky blue",hex:"#08b1dc"},
-    {t:"T4",name:"Lime",hex:"#7bae44"},
-    {t:"T5",name:"Turquoise",hex:"#0497bd"},
-    {t:"T6",name:"Blue",hex:"#2d4e9e"},
-    {t:"T7",name:"Violet",hex:"#533c94"}
+    {t:"T0",name:"Black",hex:"#2c2d30",previewHex:"#4d3c44"},
+    {t:"T1",name:"Red",hex:"#e42e2a",previewHex:"#e56762"},
+    {t:"T2",name:"Pink",hex:"#c65a93",previewHex:"#f04877"},
+    {t:"T3",name:"Sky blue",hex:"#08b1dc",previewHex:"#7bbdf6"},
+    {t:"T4",name:"Lime",hex:"#7bae44",previewHex:"#cfdb8a"},
+    {t:"T5",name:"Turquoise",hex:"#0497bd",previewHex:"#7fb1b3"},
+    {t:"T6",name:"Blue",hex:"#2d4e9e",previewHex:"#6158d2"},
+    {t:"T7",name:"Violet",hex:"#533c94",previewHex:"#a371d6"}
   ],
   /* EYEYE gel pens, sampled from the user's swatch photo
      (workspace/user/media_library/image/image-b0b95676.png). More vivid
@@ -1280,10 +1291,17 @@ function runConvert(){
      measured with each pen set. One-sided: brightens light colours,
      leaves dark colours at 1.0 (the pens can't go darker than ink). */
   var STRIPE_COMP_BIC=[
-    [1,1,1,1,1,1,1,1,1,1,1,1],
-    [1.05,1.25,1.37,1.08,1.14,1.25,1.19,1,1,1,1,1],
-    [1.54,1.83,1.89,1.64,1.74,1.8,1.64,1.39,1.18,1.46,1.39,1.29],
-    [1.8,2,2,2,2,2,2,1.69,1.47,1.77,1.58,1.49]];
+    /* Re-fitted 2026-11-27 from the user's physical ASC overlap-strip
+       photo: the BIC preview colours are now the measured single-layer
+       ink colours (see PALETTES.previewHex), and this table was fitted
+       against the rainbow rendered with those colours. Scale =
+       clamp(1/raw-ratio, 1, 2) per hue/value cell, one-sided (never
+       darkens — darkening the input cannot darken the output past the
+       pens' ink floor). */
+    [1,1.02,1.47,1.17,1.17,1.31,1,1,1,1,1,1],
+    [1.33,2,2,2,2,2,1.74,1,1,1,1.22,1],
+    [1.95,2,2,2,2,2,2,1.11,1,1.16,1.71,1.42],
+    [2,2,2,2,2,2,2,1.06,1,1,1.59,1.56]];
   var STRIPE_COMP_EYEYE=[
     [1,1,1.09,1,1,1,1,1,1,1,1,1],
     [1.42,1.75,1.81,1.36,1.34,1.53,1.36,1.26,1.12,1.46,1.28,1.10],
@@ -2289,7 +2307,15 @@ function runConvert(){
     +'<rect width="'+BEDW+'" height="'+BEDH+'" fill="white"/>'
     +parts.join("")+"</svg>";
   state.svg=svg;state.paths=pathCount;
-  $("svgHost").innerHTML=svg;
+  /* Preview only: swap each pen's opaque cap colour for its measured
+     single-layer colour, so the Multiply preview predicts the real plot.
+     The exported state.svg keeps the cap colours, so the colour-plotter
+     import still matches each stroke to the right pen. */
+  var displaySvg=svg;
+  PENS.forEach(function(p){
+    if(p.previewHex)displaySvg=displaySvg.split('stroke="'+p.hex+'"').join('stroke="'+p.previewHex+'"');
+  });
+  $("svgHost").innerHTML=displaySvg;
   var svgEl=$("svgHost").querySelector("svg");if(svgEl){svgEl.removeAttribute("width");svgEl.removeAttribute("height");}
   /* re-add paper bg removal for preview: keep white rect (paper) */
   $("stPaths").textContent=pathCount.toLocaleString();
