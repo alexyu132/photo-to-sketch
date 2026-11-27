@@ -1406,12 +1406,14 @@ function runConvert(){
        of all four stripes at once — otherwise every muted area prints
        full cyan + magenta + yellow + black and reads as muddy monochrome.
        Magenta is strengthened where yellow is also present (red/orange
-       areas), so pink stays dense there. The yellow channel itself no
-       longer always uses lime: in warm (reddish) areas the yellow ink is
-       drawn with the red pen (see the pen switch in the scanner below),
-       so reds read red; lime is only used where the colour is actually
-       yellow-green. Pure yellows (no magenta) and blues (no yellow) are
-       untouched, and neutrals are unchanged. */
+       areas), so pink stays dense there. Each channel's pen is
+       hue-dependent (see the pen switch in the scanner below): the
+       stripe uses whichever pen basically matches the local colour
+       instead of always blending the CMYK pens — cyan stripes pick
+       sky, turquoise or blue; magenta stripes pick pink or violet;
+       yellow stripes pick red (warm areas) or lime. Pure yellows (no
+       magenta) and blues (no yellow) are untouched, and neutrals are
+       unchanged. */
     var chanDark=[new Float32Array(N),new Float32Array(N),new Float32Array(N),new Float32Array(N)];
     for(i=0;i<N;i++){
       var cd=1-srgbToLin(Rb[i]),md=1-srgbToLin(Gb[i]),yd=1-srgbToLin(Bb[i]);
@@ -1422,7 +1424,7 @@ function runConvert(){
       chanDark[2][i]=y2;
       chanDark[3][i]=k;
     }
-    var stripePens=[PENS[3],PENS[2],PENS[4],PENS[0]]; /* T3 sky=cyan, T2 pink=magenta, T4 lime=yellow, T0 black */
+    var stripePens=[PENS[3],PENS[2],PENS[4],PENS[0]]; /* defaults: T3 sky=cyan, T2 pink=magenta, T4 lime=yellow, T0 black — C, M and Y are hue-dependent per sample (see below) */
     /* selfie-squiggle rule: the wave never stops unless Gaps in near-white
        is on — white areas get a low, slow baseline wave (15% amplitude,
        25% frequency) instead of a gap, so every stripe is one continuous
@@ -1448,15 +1450,27 @@ function runConvert(){
         var xi=Math.min(W-1,Math.max(0,Math.round(base)));
         var idx=yi*W+xi;
         var d=Math.min(1,Math.max(0,cdark[idx]));
-        /* The yellow channel's pen is hue-dependent: in warm (reddish)
-           areas the yellow ink is drawn with the red pen, so reds read
-           red; elsewhere it stays lime. Warm means green is clearly
-           below red (G < 0.65R) — reds and oranges are warm, yellows
-           (G close to R) and greens stay lime. The segment is flushed
-           and restarted whenever the pen changes, so a stripe can switch
-           pens as it crosses from a red wall into a yellow trim. */
+        /* Each channel's pen is hue-dependent: the stripe uses whichever
+           pen basically matches the local colour instead of always
+           blending the CMYK pens. Cyan: blue where B clearly dominates
+           G and R (pure/royal blue), turquoise where G and B are both
+           strong and R is low (teal), otherwise sky — so blues and
+           teals read as themselves instead of a sky-plus-pink blend.
+           Magenta: violet where the colour is a blue-leaning purple
+           (B high, G low, B at least ~R), otherwise pink — so purples
+           read purple instead of magenta. Yellow: red in warm (reddish)
+           areas (G clearly below R), otherwise lime. The segment is
+           flushed and restarted whenever the pen changes, so a stripe
+           can switch pens as it crosses from one colour into another. */
         var penHere=pen;
-        if(ch===2)penHere=(Gb[idx]<0.65*Rb[idx])?PENS[1]:PENS[4];
+        if(ch===0){
+          if(Bb[idx]>Gb[idx]*1.4&&Bb[idx]>Rb[idx]*1.5)penHere=PENS[6];
+          else if(Gb[idx]>0.75*Bb[idx]&&Rb[idx]<0.55*Bb[idx]&&Gb[idx]>Rb[idx]*1.5)penHere=PENS[5];
+        }else if(ch===1){
+          if(Bb[idx]>Gb[idx]*1.3&&Bb[idx]>=Rb[idx]*0.9&&Gb[idx]<0.7*Bb[idx])penHere=PENS[7];
+        }else if(ch===2){
+          penHere=(Gb[idx]<0.65*Rb[idx])?PENS[1]:PENS[4];
+        }
         var ampF, freqF;
         if(mod==="am"){ampF=ampFloor+(1-ampFloor)*Math.pow(d,0.75);freqF=freqMax;}
         else if(mod==="fm"){ampF=1;freqF=freqFloor+(freqMax-freqFloor)*d;}
