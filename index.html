@@ -1431,6 +1431,32 @@ function runConvert(){
       chanDark[3][i]=k;
     }
     var stripePens=[PENS[3],PENS[2],PENS[4],PENS[0]]; /* defaults: T3 sky=cyan, T2 pink=magenta, T4 lime=yellow, T0 black — C, M and Y are hue-dependent per sample (see below) */
+    /* Per-hue lightness compensation, calibrated on a full-saturation
+       rainbow: the Multiply composite comes out far too dark in the
+       green/cyan/yellow hues (two channels both dense there) and about
+       right in red/violet/blue. Measured luminance ratio (preview /
+       original) at Lightness 0.6 was 0.35–0.55 across hues 45–195° and
+       0.84–1.35 elsewhere; fitting a linear Lp = 1 − a·Lightness model
+       at Lightness 0.6 and 0.4 gives the Lightness each hue needs, and
+       this table is that Lightness divided by the 0.6 default (floored
+       at 0.30 so stripes never vanish). Indexed by hue in 30° steps,
+       linearly interpolated; low-saturation pixels blend toward 1.0
+       (no compensation) since their hue is meaningless and the K
+       channel carries them. */
+    var HUE_COMP=[0.81,0.63,0.39,0.32,0.33,0.31,0.46,0.72,0.85,0.85,0.85,0.85];
+    function hueCompAt(r,g,b){
+      var mx=Math.max(r,g,b),mn=Math.min(r,g,b),dl=mx-mn;
+      if(dl<0.02)return 1;
+      var h;
+      if(mx===r)h=60*(((g-b)/dl)%6);
+      else if(mx===g)h=60*((b-r)/dl+2);
+      else h=60*((r-g)/dl+4);
+      if(h<0)h+=360;
+      var f=h/30, i0=Math.floor(f)%12, i1=(i0+1)%12, fr=f-Math.floor(f);
+      var c=HUE_COMP[i0]*(1-fr)+HUE_COMP[i1]*fr;
+      var sat=dl/(mx||1);
+      return 1+(c-1)*Math.min(1,sat*1.5);
+    }
     /* Ordered (Bayer) dither for the pen switches. A hard hue threshold
        makes a visible band edge where one pen gives way to the next.
        Adding a small spatially-varying offset to the threshold makes
@@ -1496,7 +1522,7 @@ function runConvert(){
         }else if(ch===2){
           penHere=(Gb[idx]<Rb[idx]*(0.65+(dt-0.5)*0.2))?PENS[1]:PENS[4];
         }
-        var d2=d*(parseFloat($("stripeLight").value)||0.6); /* Lightness: scale channel darkness so the Multiply composite trends lighter. 0.6 is the calibrated default — saturated colours came out too dark at 1.0. */
+        var d2=d*(parseFloat($("stripeLight").value)||0.6)*hueCompAt(Rb[idx],Gb[idx],Bb[idx]); /* Lightness: scale channel darkness so the Multiply composite trends lighter. 0.6 is the calibrated default — saturated colours came out too dark at 1.0. hueCompAt adds the per-hue compensation (greens/cyans need much less ink than reds/violets). */
         var ampF, freqF;
         if(mod==="am"){ampF=ampFloor+(1-ampFloor)*Math.pow(d2,0.75);freqF=freqMax;}
         else if(mod==="fm"){ampF=1;freqF=freqFloor+(freqMax-freqFloor)*d2;}
