@@ -313,11 +313,6 @@
             <input type="checkbox" id="stripeGaps" />
             Gaps in near-white
           </label>
-          <label class="check">
-            <input type="checkbox" id="stripeComp" checked />
-            Colour compensation
-          </label>
-          <p class="hint">Brightens light colours before the stripes run, so they don&rsquo;t come out too dark. Measured on a hue &times; value rainbow; dark colours are left alone (the pens can&rsquo;t go darker than their own ink).</p>
         </div>
         <p class="hint">Stripes cycle cyan, magenta, yellow, black down the bed; each stripe&rsquo;s wiggle follows its own ink channel (amplitude + frequency). Each channel picks the pen that matches the local colour — cyan picks sky, turquoise or blue; magenta picks pink or violet; yellow picks red in warm areas, lime otherwise.</p>
       </div>
@@ -1033,7 +1028,7 @@ function mergeStrokes(list,tol){
 
 /* ============ Convert (automatic: on upload and on any control change) ============ */
 ["shadingSeg","waveOrientSeg","waveDriveSeg"].forEach(function(id){$(id).addEventListener("click",function(){if(state.img&&!state.busy)setTimeout(convert,30);});});
-["density","detail","dramatic","densityCap","brightness","contrast","saturation","flowSpacing","smooth","strokeLen","hatchAngle","waveSpacing","waveAmp","waveLen","waveCount","stripeSpacing","stripeAmp","stripeLen","stripeMod","stripeGaps","stripeComp","tspPoints","tspGamma","tspEdge","tspRelax","tspSmooth","colPoints","colPaper","colSat","stipRelax","stipPoints","stipGamma","stipR","spirPitch","spirMod","spirPaper","dithCell","dithDot"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
+["density","detail","dramatic","densityCap","brightness","contrast","saturation","flowSpacing","smooth","strokeLen","hatchAngle","waveSpacing","waveAmp","waveLen","waveCount","stripeSpacing","stripeAmp","stripeLen","stripeMod","stripeGaps","tspPoints","tspGamma","tspEdge","tspRelax","tspSmooth","colPoints","colPaper","colSat","stipRelax","stipPoints","stipGamma","stipR","spirPitch","spirMod","spirPaper","dithCell","dithDot"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
 ["fillWhite","colour","stipVary","colSmooth","adaptiveSmooth"].forEach(function(id){$(id).addEventListener("change",function(){if(state.img&&!state.busy)convert();});});
 $("penSet").addEventListener("change",function(){setPenSet($("penSet").value);if(state.img&&!state.busy)convert();});
 
@@ -1440,11 +1435,19 @@ function runConvert(){
      saturation falls so neutrals are untouched. Applied to the linear-
      light channels before the blur, so the stripe loop itself is
      unchanged — the algorithm is untouched, only its input is adjusted. */
-  var STRIPE_COMP=[
+  /* One table per pen set — the EYEYE pens are darker/more saturated
+     than BIC, so the same hue needs more brightening (up to 2.5x vs 2x),
+     and even the mid-tones are too dark for EYEYE while BIC mids match. */
+  var STRIPE_COMP_BIC=[
     [1,1,1,1,1,1,1,1,1,1,1,1],
     [1.05,1.25,1.37,1.08,1.14,1.25,1.19,1,1,1,1,1],
     [1.54,1.83,1.89,1.64,1.74,1.8,1.64,1.39,1.18,1.46,1.39,1.29],
     [1.8,2,2,2,2,2,2,1.69,1.47,1.77,1.58,1.49]];
+  var STRIPE_COMP_EYEYE=[
+    [1,1,1.09,1,1,1,1,1,1,1,1,1],
+    [1.42,1.75,1.81,1.36,1.34,1.53,1.36,1.26,1.12,1.46,1.28,1.10],
+    [2.02,2.5,2.5,2.20,2.11,2.15,1.71,2.24,1.85,2.5,1.80,1.61],
+    [2.18,2.5,2.5,2.5,2.5,2.5,1.83,2.42,2.12,2.5,1.90,1.74]];
   var STRIPE_COMP_VALS=[0.325,0.5,0.675,0.85];
   function stripeCompScale(r,g,b){
     var mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;
@@ -1462,7 +1465,8 @@ function runConvert(){
     else if(v>=STRIPE_COMP_VALS[3])vi=3;
     else{for(var k=0;k<3;k++){if(v>=STRIPE_COMP_VALS[k]&&v<=STRIPE_COMP_VALS[k+1]){vi=k+(v-STRIPE_COMP_VALS[k])/(STRIPE_COMP_VALS[k+1]-STRIPE_COMP_VALS[k]);break;}}}
     var v0=Math.min(3,Math.floor(vi)),v1=Math.min(3,v0+1),fv=vi-v0;
-    var s00=STRIPE_COMP[v0][h0],s01=STRIPE_COMP[v0][h1],s10=STRIPE_COMP[v1][h0],s11=STRIPE_COMP[v1][h1];
+    var TAB=($("penSet")&&$("penSet").value==="eyeye")?STRIPE_COMP_EYEYE:STRIPE_COMP_BIC;
+    var s00=TAB[v0][h0],s01=TAB[v0][h1],s10=TAB[v1][h0],s11=TAB[v1][h1];
     var s=(s00*(1-fh)+s01*fh)*(1-fv)+(s10*(1-fh)+s11*fh)*fv;
     return 1+(s-1)*Math.min(1,sat*2);
   }
@@ -1477,17 +1481,14 @@ function runConvert(){
       var lenPx=(parseFloat($("stripeLen").value)||1.5)/mmPx;
       if(lenPx<4)lenPx=4;
       var Rf=new Float32Array(N),Gf=new Float32Array(N),Bf=new Float32Array(N),i;
-      var compOn=$("stripeComp")&&$("stripeComp").checked;
       for(i=0;i<N;i++){
         var rr=R[i],gg=G[i],bb=B[i];
-        if(compOn){
-          var sc=stripeCompScale(rr,gg,bb);
-          if(sc!==1){
-            var lr=srgbToLin(rr)*sc,lg=srgbToLin(gg)*sc,lb=srgbToLin(bb)*sc;
-            rr=Math.min(255,Math.max(0,Math.round(linToSrgb(lr))));
-            gg=Math.min(255,Math.max(0,Math.round(linToSrgb(lg))));
-            bb=Math.min(255,Math.max(0,Math.round(linToSrgb(lb))));
-          }
+        var sc=stripeCompScale(rr,gg,bb);
+        if(sc!==1){
+          var lr=srgbToLin(rr)*sc,lg=srgbToLin(gg)*sc,lb=srgbToLin(bb)*sc;
+          rr=Math.min(255,Math.max(0,Math.round(linToSrgb(lr))));
+          gg=Math.min(255,Math.max(0,Math.round(linToSrgb(lg))));
+          bb=Math.min(255,Math.max(0,Math.round(linToSrgb(lb))));
         }
         Rf[i]=rr;Gf[i]=gg;Bf[i]=bb;
       }
