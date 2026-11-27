@@ -587,7 +587,17 @@ function rgbToOklab(r,g,b){
           0.0259040371*l+0.7827717662*m-0.8086757660*s];
 }
 function penHue(p){var c=p.rgb,mx=Math.max(c[0],c[1],c[2]),mn=Math.min(c[0],c[1],c[2]),dl=mx-mn;if(dl===0)return 0;var h;if(mx===c[0])h=60*(((c[1]-c[2])/dl)%6);else if(mx===c[1])h=60*((c[2]-c[0])/dl+2);else h=60*((c[0]-c[1])/dl+4);if(h<0)h+=360;return h;}
-function setupPens(list){list.forEach(function(p){var c=hexRgb(p.hex);p.rgb=c;p.lab=rgbToOklab(c[0],c[1],c[2]);p.hue=penHue(p);p.lum=0.2126*srgbToLin(c[0])+0.7152*srgbToLin(c[1])+0.0722*srgbToLin(c[2]);var mx=Math.max(c[0],c[1],c[2]),mn=Math.min(c[0],c[1],c[2]);p.sat=mx>0?(mx-mn)/mx:0;});}
+function setupPens(list){list.forEach(function(p){var c=hexRgb(p.hex);p.rgb=c;p.lab=rgbToOklab(c[0],c[1],c[2]);
+  /* Hue for pen selection is the colour the pen actually plots
+     (previewHex, measured from a physical plot) when we have one — the
+     cap hues of sky and turquoise are both ~192, so hue alone cannot
+     tell them apart and penByHue(190) kept returning sky, which is why
+     the turquoise pen was never used even where the teal test passed;
+     the plotted hues are 208 (sky) and 182 (turquoise), so the teal
+     target now picks turquoise. Without a measured colour (EYEYE),
+     fall back to the cap hue. */
+  var hc=p.previewHex?hexRgb(p.previewHex):c;p.hue=penHue({rgb:hc});
+  p.lum=0.2126*srgbToLin(c[0])+0.7152*srgbToLin(c[1])+0.0722*srgbToLin(c[2]);var mx=Math.max(c[0],c[1],c[2]),mn=Math.min(c[0],c[1],c[2]);p.sat=mx>0?(mx-mn)/mx:0;});}
 setupPens(PALETTES.bic);setupPens(PALETTES.eyeye);
 function setPenSet(name){PENS=PALETTES[name]||PALETTES.bic;}
 /* BIC Cristal datasheet line width: the 1.6 mm figure is the ball diameter,
@@ -1509,24 +1519,26 @@ function runConvert(){
              pen basically matches the local colour instead of always
              blending the CMYK pens. Cyan: blue where B clearly dominates
              G and R (pure/royal blue), turquoise where G and B are both
-             strong and R is low (teal), otherwise sky — so blues and
-             teals read as themselves instead of a sky-plus-pink blend.
-             Magenta: whichever magenta-family pen (pink or violet) is
-             closest to the pixel's hue — blue skies get violet, reds get
-             pink — so a light blue does not draw in pink and turn
-             purple. Yellow: red in warm (reddish) areas (G clearly below
-             R), otherwise lime. The segment is flushed and restarted
-             whenever the pen changes, so a stripe can switch pens as it
-             crosses from one colour into another. Each threshold is
-             dithered by the Bayer value at this pixel (16 px cell), so
-             near a boundary the two pens interleave instead of switching
-             all at once — the band edge becomes a blend. */
+             strong and R is low (teal — the R/B bar is 0.65, not 0.55, so
+             light pastel cyans like a sky qualify and not just saturated
+             teals), otherwise sky — so blues and teals read as themselves
+             instead of a sky-plus-pink blend. Magenta: whichever
+             magenta-family pen (pink or violet) is closest to the pixel's
+             hue — blue skies get violet, reds get pink — so a light blue
+             does not draw in pink and turn purple. Yellow: red in warm
+             (reddish) areas (G clearly below R), otherwise lime. The
+             segment is flushed and restarted whenever the pen changes, so
+             a stripe can switch pens as it crosses from one colour into
+             another. Each threshold is dithered by the Bayer value at this
+             pixel (16 px cell), so near a boundary the two pens interleave
+             instead of switching all at once — the band edge becomes
+             a blend. */
           var penHere=pen;
           var dt=(BAYER[((yi>>2)&3)*4+((xi>>2)&3)]+0.5)/16; /* coarse 2D dither, 0..1 */
           if(mono)penHere=PENS[0];
           else if(ch===0){
             if(Bb[idx]>Gb[idx]*(1.4+(dt-0.5)*0.4)&&Bb[idx]>Rb[idx]*1.5)penHere=penByHue(235);
-            else if(Gb[idx]>Bb[idx]*(0.75+(dt-0.5)*0.2)&&Rb[idx]<0.55*Bb[idx]&&Gb[idx]>Rb[idx]*1.5)penHere=penByHue(190);
+            else if(Gb[idx]>Bb[idx]*(0.75+(dt-0.5)*0.2)&&Rb[idx]<0.65*Bb[idx]&&Gb[idx]>Rb[idx]*1.5)penHere=penByHue(190);
           }else if(ch===1){
             /* Magenta pen by hue: pick whichever magenta-family pen
                (pink T2 or violet T7) is closest to the pixel's hue, so
